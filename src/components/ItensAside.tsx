@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clip } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
+import { invoke } from '@tauri-apps/api/core';
+
 import { 
   Plus, 
   Search, 
@@ -11,7 +13,10 @@ import {
   Film, 
   Type, 
   Sparkles, 
-  Layers 
+  Layers,
+  DiamondPlus,
+  Download,
+  Check
 } from 'lucide-react';
 
 
@@ -47,6 +52,25 @@ interface ItensAsideProps {
 
 
 }
+
+
+const CloudFontPreviewStyles = ({ fonts }: { fonts: any[] }) => {
+  return (
+    <style>
+      {fonts.map(font => {
+        const fontName = font.file.split('.')[0];
+        const url = `https://wannacut.app/assets/fonts/${font.file}`;
+        return `
+          @font-face {
+            font-family: '${fontName}_preview';
+            src: url('${url}');
+            font-display: swap;
+          }
+        `;
+      }).join('\n')}
+    </style>
+  );
+};
 
 
 
@@ -122,6 +146,52 @@ export const ItensAside = ({
     purple: "bg-purple-600/20 text-purple-400",
     blue: "bg-blue-600/20 text-blue-400",
   };
+
+
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
+  const [cloudFonts, setCloudFonts] = useState<any[]>([]);
+
+  // Buscar as fontes do seu site quando a aba de texto abrir
+  useEffect(() => {
+    if (activeTab === 'Text') {
+
+      console.log('fazendo o fetch ...')
+
+
+      invoke('fetch_cloud_fonts')
+      .then((data: any) => {
+        setCloudFonts(data.fonts);
+        console.log("Cloud fonts loaded via Rust:", data.fonts);
+        console.log("Avaliable fonts", availableFonts)
+      })
+      .catch(err => console.error("Error fetching via Rust:", err));
+
+        
+    }
+  }, [activeTab]);
+
+  const handleDownloadFont = async (fontFile: string) => {
+    const settingsFolder = localStorage.getItem("wannacut_settings_folder");
+    const destination = `${settingsFolder}/fonts/${fontFile}`;
+    const url = `https://wannacut.app/assets/fonts/${fontFile}`;
+
+    // Lógica de download (Exemplo simplificado via Tauri)
+    setDownloadProgress(prev => ({ ...prev, [fontFile]: 10 })); // Inicia barra
+    
+    try {
+      // Aqui você chamaria um comando Rust 'download_file' que criamos antes
+      // ou usaria a API de HTTP do Tauri
+      await invoke('download_font_file', { url, path: destination });
+      
+      setDownloadProgress(prev => ({ ...prev, [fontFile]: 100 }));
+      loadSystemFonts(); // Recarrega a lista do Rust para validar que o arquivo existe
+    } catch (error) {
+      console.error("Download failed", error);
+      setDownloadProgress(prev => ({ ...prev, [fontFile]: 0 }));
+    }
+  };
+
+
   return (
     <aside
       style={{ width: `${sidebarWidth}px` }}
@@ -160,204 +230,267 @@ export const ItensAside = ({
       </nav>
 
       {/* --- CONTENT AREA --- */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {activeTab === 'Media' && (
           <>
             {/* Header: Import & Search */}
-            <aside
-              className="relative border-r border-zinc-800 bg-[#0c0c0c] flex flex-col hidden lg:flex"
-            >
-              <div className="p-4 border-b border-zinc-900">
-                <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                  Media Library
-                </h2>
+<aside
+  className="relative border-r border-zinc-800 bg-[#0c0c0c] flex flex-col hidden lg:flex h-full"
+ 
+>
+  {/* Header da Library */}
+  <div className="p-4 border-b border-zinc-900 flex-shrink-0">
+    <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+      Media Library
+    </h2>
+  </div>
+
+  {/* Container com Scroll */}
+  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+    
+    {/* Botão de Importação - Sempre no topo */}
+    <div
+      onClick={handleImportFile}
+      className="aspect-video w-full border border-dashed border-zinc-800 rounded-xl flex flex-col items-center justify-center group cursor-pointer hover:bg-zinc-900/50 mb-6 transition-colors flex-shrink-0"
+    >
+      <Plus size={20} className="text-zinc-700 group-hover:text-cyan-400 transition-colors" />
+      <h2 className="text-[9px] font-black text-zinc-500 uppercase mt-2">Import Media</h2>
+    </div>
+
+    {/* Search Bar */}
+    <div className="relative mb-6 group flex-shrink-0">
+      <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+        <Search
+          size={16}
+          className={`transition-colors duration-300 ${
+            searchQuery ? 'text-cyan-500' : 'text-zinc-500 group-focus-within:text-cyan-400'
+          }`}
+        />
+      </div>
+
+      <input
+        type="text"
+        placeholder="Search assets..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="h-9 w-full bg-[#161616]/50 backdrop-blur-xl border border-white/5 rounded-2xl py-3 pl-12 pr-12 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-600/30 focus:bg-[#1a1a1a] transition-all duration-300"
+      />
+
+      <AnimatePresence>
+        {searchQuery && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            onClick={() => setSearchQuery("")}
+            className="absolute inset-y-0 right-4 flex items-center text-zinc-500 hover:text-white transition-colors"
+          >
+            <X size={14} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </div>
+
+    {/* GRID DE ASSETS DINÂMICO */}
+    <div 
+      className="grid gap-3"
+      style={{ 
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+        alignItems: 'start'
+      }}
+    >
+      {filteredAssets.length > 0 ? (
+        filteredAssets.map((asset, index) => (
+          <motion.div
+            key={asset.path}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+            onClick={(e) => {
+              toggleAssetSelection(asset, e.shiftKey || e.ctrlKey);
+              setSourceAsset(asset);
+              setInPoint(0);
+              setOutPoint(0);
+              setCurrentTime2(0);
+            }}
+            className={`group relative aspect-video bg-[#1a1a1a] rounded-lg overflow-hidden border transition-all cursor-pointer
+            ${selectedAssets.includes(asset) ? 'bg-cyan-500/10 border-cyan-500' : 'bg-[#151515] border-zinc-800 hover:border-zinc-600'}`}
+            draggable="true"
+            onDragStart={(e) => handleDragStart(e, null, null, null, asset.name, false, null)}
+          >
+            {/* Thumbnail Logic */}
+            {asset.type !== 'audio' && asset.thumbnailUrl ? (
+              <img
+                src={asset.thumbnailUrl}
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                alt={asset.name}
+              />
+            ) : asset.type === 'audio' ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#121212]">
+                <Music size={32} className="text-zinc-700 transition-colors duration-300 group-hover:text-cyan-500" />
               </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {/* Import Button */}
-                <div
-                  onClick={handleImportFile}
-                  className="aspect-video border border-dashed border-zinc-800 rounded-xl flex flex-col items-center justify-center group cursor-pointer hover:bg-zinc-900/50 mb-4 transition-colors"
-                >
-                  <Plus size={20} className="text-zinc-700 group-hover:text-fuchsia-400 transition-colors" />
-                  <h2 className="text-[9px] font-black text-zinc-500 uppercase mt-2">Import Media</h2>
-                </div>
-
-                {/* RIGHT RESIZER HANDLE */}
-                <div
-                  onMouseDown={() => {
-                    isResizingSidebar.current = true;
-                    document.body.style.cursor = 'col-resize';
-                  }}
-                  className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize z-[60] hover:bg-blue-500/40 transition-colors"
-                />
-
-                {/* Search Bar Container */}
-                <div className="relative mb-6 group">
-                  <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                    <Search
-                      size={16}
-                      className={`transition-colors duration-300 ${
-                        searchQuery ? 'text-red-500' : 'text-zinc-500 group-focus-within:text-red-400'
-                      }`}
-                    />
-                  </div>
-
-                  <input
-                    type="text"
-                    placeholder="Search assets..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-9 w-full bg-[#161616]/50 backdrop-blur-xl border border-white/5 rounded-2xl py-3 pl-12 pr-12 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-red-600/30 focus:bg-[#1a1a1a] transition-all duration-300"
-                  />
-
-                  <AnimatePresence>
-                    {searchQuery && (
-                      <motion.button
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        onClick={() => setSearchQuery("")}
-                        className="absolute inset-y-0 right-4 flex items-center text-zinc-500 hover:text-white transition-colors"
-                      >
-                        <X size={14} />
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {filteredAssets.length > 0 ? (
-                  filteredAssets.map((asset, index) => (
-                    <motion.div
-                      key={asset.path}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      onClick={(e) => {
-                        toggleAssetSelection(asset, e.shiftKey || e.ctrlKey);
-                        setSourceAsset(asset);
-                        setInPoint(0);
-                        setOutPoint(0);
-                        setCurrentTime2(0);
-                      }}
-                      className={`group relative aspect-video bg-[#1a1a1a] rounded-lg overflow-hidden border border-white/5 hover:border-cyan-500 transition-colors cursor-pointer
-                      ${selectedAssets.includes(asset) ? 'bg-red-500/10 border-red-500' : 'bg-[#151515] border-zinc-800 hover:border-zinc-600'}`}
-                      draggable="true"
-                      onDragStart={(e) => handleDragStart(e, null, null, null, asset.name, false, null)}
-                    >
-                      {asset.type !== 'audio' && asset.thumbnailUrl && (
-                        <img
-                          src={asset.thumbnailUrl}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                          alt={asset.name}
-                        />
-                      )}
-
-                      {asset.type === 'audio' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-[#121212]">
-                          <Music size={48} className="text-gray-600 transition-colors duration-300 group-hover:text-red-600" />
-                        </div>
-                      )}
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 opacity-100" />
-
-                      {asset.type !== 'image' && asset.duration && (
-                        <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded text-[10px] font-mono text-white">
-                          {formatTime(asset.duration)}
-                        </div>
-                      )}
-
-                      <div className="absolute top-2 left-2 p-1 bg-black/50 backdrop-blur-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
-                        {asset.type === 'video' && <Play size={12} className="text-white" />}
-                        {asset.type === 'audio' && <Music size={12} className="text-white" />}
-                        {asset.type === 'image' && <ImageIcon size={12} className="text-white" />}
-                      </div>
-
-                      <div className="absolute bottom-2 left-2 right-12 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <p
-                          className="text-[10px] text-white truncate font-medium drop-shadow-lg outline-none"
-                          contentEditable
-                          suppressContentEditableWarning={true}
-                          onDoubleClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); }
-                            if (e.key === 'Escape') { e.currentTarget.innerText = asset.name; e.currentTarget.blur(); }
-                          }}
-                          onBlur={(e) => {
-                            const newName = e.currentTarget.innerText.trim();
-                            if (newName && newName !== asset.name) handleRenameAsset(asset.name, newName);
-                          }}
-                        >
-                          {asset.name}
-                        </p>
-                      </div>
-                    </motion.div>
-                  ))
-                ) : (
-                  <div className="col-span-full py-20 text-center">
-                    <Search size={48} className="mx-auto text-zinc-800 mb-4" />
-                    <p className="text-zinc-500 text-sm italic">No assets match your search...</p>
-                  </div>
-                )}
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#121212]">
+                 <Play size={24} className="text-zinc-800" />
               </div>
-            </aside>
+            )}
 
+            {/* Overlay Gradiente */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/20 opacity-100" />
+
+            {/* Time Badge */}
+            {asset.type !== 'image' && asset.duration && (
+              <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-mono text-white/80 border border-white/5">
+                {formatTime(asset.duration)}
+              </div>
+            )}
+
+            {/* Type Icon Badge */}
+            <div className="absolute top-2 left-2 p-1.5 bg-black/60 backdrop-blur-md rounded-md opacity-0 group-hover:opacity-100 transition-opacity border border-white/5">
+              {asset.type === 'video' && <Play size={10} className="text-cyan-400 fill-cyan-400" />}
+              {asset.type === 'audio' && <Music size={10} className="text-cyan-400" />}
+              {asset.type === 'image' && <ImageIcon size={10} className="text-cyan-400" />}
+            </div>
+
+            {/* Asset Name with Inline Edit */}
+            <div className="absolute bottom-2 left-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
+              <p
+                className="text-[10px] text-zinc-200 truncate font-medium outline-none"
+                contentEditable
+                suppressContentEditableWarning={true}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); }
+                  if (e.key === 'Escape') { e.currentTarget.innerText = asset.name; e.currentTarget.blur(); }
+                }}
+                onBlur={(e) => {
+                  const newName = e.currentTarget.innerText.trim();
+                  if (newName && newName !== asset.name) handleRenameAsset(asset.name, newName);
+                }}
+              >
+                {asset.name}
+              </p>
+            </div>
+          </motion.div>
+        ))
+      ) : (
+        <div className="col-span-full py-20 text-center">
+          <Search size={32} className="mx-auto text-zinc-800 mb-4" />
+          <p className="text-zinc-600 text-xs italic font-mono uppercase tracking-tighter">No assets found_</p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  {/* RIGHT RESIZER HANDLE - Posicionado na borda direita do aside */}
+  <div
+    onMouseDown={() => {
+      isResizingSidebar.current = true;
+      document.body.style.cursor = 'col-resize';
+    }}
+    className="absolute top-0 right-0 w-1 h-full cursor-col-resize z-[60] hover:bg-cyan-500/50 transition-colors group"
+  >
+    <div className="absolute top-1/2 right-0 w-[2px] h-8 bg-zinc-800 group-hover:bg-cyan-500 rounded-full -translate-y-1/2 transition-colors" />
+  </div>
+</aside>
           </>
         )}
         
              
-        {
-        
-        (activeTab === 'Text' && availableFonts.length > 0) && (
-          <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Typography Library
-              </h3>
-              <button 
-                onClick={() => {/* Abrir pasta de fontes no SO */}}
-                className="p-1 hover:bg-white/5 rounded text-zinc-500 transition-colors"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
+        {/* Seção de Texto/Fontes no ItensAside.tsx */}
+        {(activeTab === 'Text') && (
+          <div className="grid grid-cols-1 gap-2">
+              {/* --- FONTES LOCAIS --- */}
               {availableFonts.map((fontPath) => {
-                const fontName = fontPath.split(/[\\/]/).pop()?.split('.')[0] || "Font";
+                const fontFile = fontPath.split(/[\\/]/).pop() || "";
+                const fontName = fontFile.split('.')[0];
                 return (
                   <motion.div
                     key={fontPath}
                     draggable
                     onDragStart={(e) => handleDragStartText(e,fontName, fontPath)}
-                    className="group relative bg-white/2 border border-white/5 p-3 rounded-lg hover:border-cyan-500/30 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-all"
+                    className="group relative flex flex-col bg-white/[0.02] border border-white/5 p-3 rounded-lg hover:border-cyan-500/30 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-all overflow-hidden h-[85px]"
                   >
-                    {/* O SEGREDO: Aplicar a fonte dinamicamente aqui */}
-                    <p 
-                      style={{ fontFamily: fontName }} 
-                      className="text-lg text-white truncate"
-                    >
-                      {fontName}
-                    </p>
+                    <div className="flex-1 flex items-center min-h-0">
+                      <p 
+                        style={{ fontFamily: fontName, fontSize: 'clamp(12px, 4vw, 20px)' }} 
+                        className="text-white truncate w-full leading-none"
+                      >
+                        {fontName.replace(/_/g, ' ')}
+                      </p>
+                    </div>
                     
-                    <div className="flex justify-between items-center mt-2">
-                      <span className="text-[8px] text-zinc-600 uppercase font-bold tracking-tighter">
-                          {fontPath.endsWith('ttf') ? 'TrueType' : 'OpenType'}
+                    <div className="flex justify-between items-center pt-2 border-t border-white/5 mt-auto">
+                      <span className="text-[7px] text-zinc-600 uppercase font-black tracking-tighter">
+                         {fontPath.split('.').pop()?.toUpperCase()}
                       </span>
                       <Type size={10} className="text-zinc-700 group-hover:text-cyan-500 transition-colors" />
                     </div>
                   </motion.div>
                 );
               })}
-            </div>
-          </div>
+
+              {/* --- FONTES CLOUD --- */}
+              {cloudFonts
+                .filter(cf => !availableFonts.some(af => af.includes(cf.file)))
+                .map((font) => {
+                  const fontName = font.file.split('.')[0];
+                  const progress = downloadProgress[font.file] || 0;
+
+                  return (
+                    <div key={font.id} className="group relative flex flex-col bg-zinc-950/40 border border-dashed border-white/10 p-3 rounded-lg hover:border-cyan-500/30 transition-all h-[85px] overflow-hidden">
+                      <CloudFontPreviewStyles fonts={[font]} />
+                      
+                      <div className="flex-1 flex items-center min-h-0">
+                        <p 
+                          style={{ 
+                            fontFamily: `'${fontName}_preview', sans-serif`,
+                            fontSize: 'clamp(12px, 4vw, 20px)' 
+                          }} 
+                          className="text-zinc-500 group-hover:text-zinc-200 transition-colors truncate w-full leading-none"
+                        >
+                          {fontName.replace(/_/g, ' ')}
+                        </p>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-2 border-t border-white/5 mt-auto">
+                        <div className="flex items-center gap-1">
+                          {font.plan !== 'free' && <DiamondPlus size={8} className="text-cyan-400 fill-cyan-400/20" />}
+                          <span className="text-[7px] text-zinc-700 uppercase font-bold tracking-tighter">{font.plan} </span>
+                        </div>
+                        
+                        {
+                          font.plan == 'free' &&
+                            <button 
+                            onClick={() => handleDownloadFont(font.file)}
+                            className="hover:text-cyan-400 transition-all text-zinc-600"
+                          >
+                            <Download size={12} />
+                          </button>
+                        }
+                      </div>
+
+                      {/* Barra de Progresso no Fundo */}
+                      {progress > 0 && (
+                        <div className="absolute bottom-0 left-0 w-full h-[2px] bg-zinc-900">
+                          <motion.div 
+                            animate={{ width: `${progress}%` }}
+                            className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                      </div>
         )}
         
         
         {
         
         
-        (activeTab ==='Text' && availableFonts.length == 0) &&
+        (activeTab ==='Text' && availableFonts.length == 0 && cloudFonts.length == 0) &&
         (
 
           <div className="flex-1 flex flex-col items-center justify-center p-10 text-center space-y-4">

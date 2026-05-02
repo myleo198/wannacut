@@ -4,15 +4,25 @@ import {
   Wind, Layers, ChevronDown, Sparkles, X 
 } from 'lucide-react';
 import { motion, AnimatePresence, number } from 'framer-motion';
+import {converterSpeed, convertDB, convertZoom} from '@/App'
 
 
 
 
-const useEditableValue = (interpolatedValue: number, onUpdate: (val: number) => void) => {
+const useEditableValue = (interpolatedValue: number, onUpdate: (val: number) => void, type: null | string = null) => {
   const [localValue, setLocalValue] = useState(interpolatedValue);
 
   // Sincroniza o estado local quando a timeline se move
   useEffect(() => {
+
+/*
+
+    interpolatedValue = type === 'speed' ? converterSpeed(interpolatedValue) : 
+       type=== 'volume' ? convertDB(interpolatedValue) : 
+     type === 'zoom' ? convertZoom(interpolatedValue) : interpolatedValue;
+
+*/
+
     setLocalValue(interpolatedValue);
   }, [interpolatedValue]);
 
@@ -82,6 +92,21 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
             <Settings2 size={12} />
             <span className="text-[10px] font-black uppercase tracking-widest">Basic</span>
           </div>
+          
+
+          {isText && <PropertyRow label="Text" keyframable={false}>
+                  <div className="flex items-center gap-2">
+                      <input 
+                        type="text"
+                        className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
+                        value={clip.name}
+                        onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, name: e.target.value } : c))}
+                      />
+                    
+                  </div>
+                  
+                </PropertyRow>
+          }
 
           {(isVideo || isText || isImage) && (
             <>
@@ -334,17 +359,17 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
               label={
                 <div className="flex justify-between items-center w-full pr-2">
                   <span>Volume</span>
-                  <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-16">
+                  <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-20">
                     <input 
                       type="number" 
                       className="w-full bg-transparent text-[9px] font-mono text-white text-center outline-none pr-1"
                       style={{ color: activeHex }}
-                      value={Math.round(volumeState.localValue * 100)}
-                      onChange={(e) => volumeState.setLocalValue(parseFloat(e.target.value) / 100)}
+                      value={Math.round(volumeState.localValue * 100)/100 || 0}
+                      onChange={(e) => volumeState.setLocalValue(parseFloat(e.target.value))}
                       onBlur={volumeState.handleBlurOrEnter}
                       onKeyDown={(e) => e.key === 'Enter' && volumeState.handleBlurOrEnter(e)}
                     />
-                    <span className="text-[8px] ml-0.5 text-zinc-500">%</span>
+                    <span className="text-[8px] ml-0.5 text-zinc-500"> DB</span>
                   </div>
                 </div>
               }
@@ -352,11 +377,11 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
               keyframeNow={isVolumeKNow} // Usando o booleano correto aqui
             >
               <input 
-                type="range" min="0" max="1" step="0.01" className="w-full cursor-pointer"
-                value={volumeState.localValue}
+                type="range" min="-20" max="20" step="1" className="w-full cursor-pointer"
+                value={volumeState.localValue || 0}
                 style={{ accentColor: activeHex }} 
                 onChange={(e) => {
-                  const v = parseFloat(e.target.value);
+                  const v = e.target.value;
                   volumeState.setLocalValue(v);
                   updateKeyframes(selectedClip, 'volume', v);
                 }}
@@ -484,8 +509,8 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 <div className="flex items-center bg-[#090909] border border-white/10 rounded px-2 py-1 focus-within:border-emerald-500/50 transition-colors">
                   <input 
                     type="number" step="0.1" className="w-full bg-transparent text-[10px] text-white outline-none"
-                    value={selectedClip.fadeIn || 0}
-                    onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, fadeIn: parseFloat(e.target.value)} : c))}
+                    value={selectedClip.fadein || 0}
+                    onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, fadein: parseFloat(e.target.value)} : c))}
                   />
                 </div>
               </div>
@@ -494,8 +519,8 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 <div className="flex items-center bg-[#090909] border border-white/10 rounded px-2 py-1 focus-within:border-emerald-500/50 transition-colors">
                   <input 
                     type="number" step="0.1" className="w-full bg-transparent text-[10px]  text-white outline-none"
-                    value={selectedClip.fadeOut || 0}
-                    onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, fadeOut: parseFloat(e.target.value)} : c))}
+                    value={selectedClip.fadeout || 0}
+                    onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, fadeout: parseFloat(e.target.value)} : c))}
                   />
                 </div>
               </div>
@@ -529,11 +554,11 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                     step="0.1" 
                     min="0"
                     className="w-full bg-transparent text-[10px] text-white outline-none" 
-                    value={selectedClip.audioFadeIn || 0}
+                    value={selectedClip.fadeinAudio || 0}
                     onChange={(e) => {
                       const val = parseFloat(e.target.value) || 0;
                       setClips(prev => prev.map(c => 
-                        c.id === selectedClip.id ? { ...c, audioFadeIn: val } : c
+                        c.id === selectedClip.id ? { ...c, fadeinAudio: val } : c
                       ));
                     }}
                   />
@@ -549,11 +574,11 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                     step="0.1" 
                     min="0"
                     className="w-full bg-transparent text-[10px] text-white outline-none"
-                    value={selectedClip.audioFadeOut || 0}
+                    value={selectedClip.fadeoutAudio || 0}
                     onChange={(e) => {
                       const val = parseFloat(e.target.value) || 0;
                       setClips(prev => prev.map(c => 
-                        c.id === selectedClip.id ? { ...c, audioFadeOut: val } : c
+                        c.id === selectedClip.id ? { ...c, fadeoutAudio: val } : c
                       ));
                     }}
                   />
@@ -615,6 +640,9 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
  */
 const EffectControl = ({ effect, onUpdate }) => {
   // Helper para Sliders (Intensidade, Pitch, etc)
+
+   
+
   const renderSlider = (label: string, attr: string, min: number, max: number, step: number) => (
     <div className="mt-3 space-y-1.5">
       <div className="flex justify-between items-center px-1">
@@ -870,8 +898,8 @@ const resolveColor = (input: string): string => {
 
   // 3. Crie os estados editáveis (Use estes nos Inputs)
   const opacState = useEditableValue(opacity, (v) => updateKeyframes(selectedClip, 'opacity', v));
-  const zoomState = useEditableValue(zoom, (v) => updateKeyframes(selectedClip, 'zoom', v));
-  const volumeState = useEditableValue(volume, (v) => updateKeyframes(selectedClip, 'volume', v));
+  const zoomState = useEditableValue(zoom, (v) => updateKeyframes(selectedClip, 'zoom', v), 'zoom');
+  const volumeState = useEditableValue(volume, (v) => updateKeyframes(selectedClip, 'volume', v), 'volume');
   const posXState = useEditableValue(position.x, (v) => updateKeyframes(selectedClip, 'position', { ...position, x: v }));
   const posYState = useEditableValue(position.y, (v) => updateKeyframes(selectedClip, 'position', { ...position, y: v }));
   const rot2dState = useEditableValue(rotation3d.rot, (v) => updateKeyframes(selectedClip, 'rotation3d', { ...rotation3d, rot: v }));
@@ -895,11 +923,18 @@ const resolveColor = (input: string): string => {
 
   if (!selectedClip) return <div className="flex-1 bg-[#090909] border-l border-white/10" />;
 
-  const tabs = [
+  const tabs = !isText ? [
     { id: 'basic', label: 'Basic' },
     { id: 'effects', label: 'Effects' },
     { id: 'transitions', label: 'Transitions' },
-  ];
+  ] :
+
+  [
+    { id: 'basic', label: 'Basic' }
+   
+  ]
+
+
 
   return (
     <aside className="flex flex-col h-full bg-[#090909] border-l border-white/10 overflow-hidden" style={{ width: 300 }}>
@@ -969,7 +1004,7 @@ const resolveColor = (input: string): string => {
                  
                />
             )}
-            {activeTab === 'effects' && <EffectsSection 
+            {activeTab === 'effects'  && <EffectsSection 
                clip={selectedClip} 
                removeEffectFromClip = {removeEffectFromClip}
                setClips = {setClips}
@@ -977,7 +1012,7 @@ const resolveColor = (input: string): string => {
                
                
                />}
-            {activeTab === 'transitions' && <TransitionsSection clip={selectedClip} />}
+            {activeTab === 'transitions'  && <TransitionsSection clip={selectedClip} />}
           </motion.div>
         </AnimatePresence>
       </div>

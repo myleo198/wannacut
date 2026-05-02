@@ -210,6 +210,69 @@ interface Tracks
 
 const PIXELS_PER_SECOND = 5;
 
+
+export const convertZoom = (input: number): number => {
+  // Garantir que o input esteja no limite 0 a 1
+  const val = Math.max(0, Math.min(1, input));
+
+  if (val <= 0.5) {
+    return val * (1.0 - 0.01) / 0.5 + 0.01;
+  } else {
+    return (val - 0.5) * (20.0 - 1.0) / (1.0 - 0.5) + 1.0;
+  }
+};
+
+
+export const reverterZoom = (zoom: number): number => {
+  const z = Math.max(0.01, Math.min(20, zoom));
+
+  if (z <= 1.0) {
+    return (z - 0.01) * 0.5 / (1.0 - 0.01);
+  } else {
+    return (z - 1.0) * (1.0 - 0.5) / (20.0 - 1.0) + 0.5;
+  }
+};
+
+
+export const convertDB = (kfValue: number) => {
+    const db = (kfValue * 60) - 30;
+    return db;
+  };
+
+export const reverterVolume = (db: number): number =>
+{
+   const value = (db + 30)/60;
+   return value
+}
+
+//convert logic 0-1 to 0.2 - 25 (0.5 is speed 1)
+export const converterSpeed = (value: number): number => {
+  
+  if (value === 0.5) return 1.0;
+
+  if (value < 0.5) {
+    return 0.2 + ((value / 0.5) * (1.0 - 0.2));
+  } else {
+    const t = (value - 0.5) / 0.5;
+    return 1.0 + (t * (25.0 - 1.0));
+  }
+};
+
+
+//undoing converterSpeed
+export const reverterSpeed = (realSpeed: number): number => {
+  
+  if (realSpeed === 1.0) return 0.5;
+
+  if (realSpeed < 1.0) {
+    const value = ((realSpeed - 0.2) / 0.8) * 0.5;
+    return Math.max(0, value); 
+  } else {
+    const value = ((realSpeed - 1.0) / 24.0) * 0.5 + 0.5;
+    return Math.min(1, value); 
+  }
+};
+
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [rootPath, setRootPath] = useState<string | null>(null);
@@ -263,8 +326,6 @@ const settingsFolder = localStorage.getItem("wannacut_settings_folder");
 
 const [hasNewMessages, setHasNewMessages] = useState(false);
 const notifyRef = useRef<NotificationsRef>(null); // A Ref que você já tem
-
-
 
 
 
@@ -1114,39 +1175,7 @@ const audioPlayersRef = useRef<Map<string, HTMLAudioElement>>(new Map());
 
 //Render all audios of the current time
 
-const convertZoom = (input: number): number => {
-  // Garantir que o input esteja no limite 0 a 1
-  const val = Math.max(0, Math.min(1, input));
 
-  if (val <= 0.5) {
-    return val * (1.0 - 0.01) / 0.5 + 0.01;
-  } else {
-    return (val - 0.5) * (20.0 - 1.0) / (1.0 - 0.5) + 1.0;
-  }
-};
-
-
-const reverterZoom = (zoom: number): number => {
-  const z = Math.max(0.01, Math.min(20, zoom));
-
-  if (z <= 1.0) {
-    return (z - 0.01) * 0.5 / (1.0 - 0.01);
-  } else {
-    return (z - 1.0) * (1.0 - 0.5) / (20.0 - 1.0) + 0.5;
-  }
-};
-
-
-const convertDB = (kfValue: number) => {
-    const db = (kfValue * 60) - 30;
-    return db;
-  };
-
-const reverterVolume = (db: number): number =>
-{
-   const value = (db + 30)/60;
-   return value
-}
 
 
 
@@ -1190,7 +1219,7 @@ const getInterpolatedValue = (time: number, keyframes: Keyframe[]): number => {
 };
 
 
-const getInterpolatedValueWithFades = (
+const getInterpolatedValueWithFades_old = (
   timeFull: number, 
   clip: any, 
   type: 'opacity' | 'volume' | 'speed' | 'zoom' | 'position' | 'rotation3d'
@@ -1199,7 +1228,7 @@ const getInterpolatedValueWithFades = (
   // 1. Fallbacks com tipos numéricos garantidos
   const getDefaultValue = () => {
     switch (type) {
-      case 'volume': return 1;
+      case 'volume': return 0;
       case 'zoom': return 1.0;
       case 'position': return { x: 0, y: 0 };
       case 'rotation3d': return { rot: 0, rot3d: 0 };
@@ -1271,76 +1300,13 @@ const getInterpolatedValueWithFades = (
 
 
 
-const getInterpolatedValueWithFades_old = (
-  timeFull: number, 
-  clip: any, 
-  type: 'opacity' | 'volume' | 'speed' | 'zoom' | 'position' | 'rotation3d'
-): any => {
-  
-  // 1. Valores Padrão (Fallbacks) - Adicionado rotation3d
-  const getDefaultValue = () => {
-    switch (type) {
-      case 'volume': return convertDB(0.5);
-      case 'zoom': return convertZoom(0.5);
-      case 'position': return { x: 0, y: 0 };
-      case 'rotation3d': return { x: 0, y: 0 }; // x: rot, y: rot3d
-      case 'speed': return 1.0;
-      case 'opacity': return 1.0;
-      default: return 0;
-    }
-  };
-
-  const time = timeFull - clip.start;
-  const kfArray = clip.keyframes?.[type];
-  let baseValue = getDefaultValue();
-
-  // Se não houver keyframes, retorna o padrão imediatamente
-  if (!kfArray || kfArray.length === 0) {
-    return applyFades(baseValue, time, clip, type);
-  }
-
-  const sorted = [...kfArray].sort((a, b) => a.time - b.time);
-
-  // 2. Lógica de Interpolação
-  if (time <= sorted[0].time) {
-    baseValue = sorted[0].value;
-  } else if (time >= sorted[sorted.length - 1].time) {
-    baseValue = sorted[sorted.length - 1].value;
-  } else {
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const startKf = sorted[i];
-      const endKf = sorted[i + 1];
-
-      if (time >= startKf.time && time <= endKf.time) {
-        const rangeTime = endKf.time - startKf.time;
-        const progress = rangeTime === 0 ? 0 : (time - startKf.time) / rangeTime;
-
-        // LÓGICA PARA OBJETOS (Position e Rotation3D)
-        if (type === 'position' || type === 'rotation3d') {
-          const start = startKf.value as { x: number, y: number };
-          const end = endKf.value as { x: number, y: number };
-          baseValue = {
-            x: start.x + progress * (end.x - start.x),
-            y: start.y + progress * (end.y - start.y)
-          };
-        } else {
-          // LÓGICA PARA NÚMEROS (Opacity, Speed, Zoom, Volume)
-          baseValue = (startKf.value as number) + progress * ((endKf.value as number) - (startKf.value as number));
-        }
-        break;
-      }
-    }
-  }
-
-  return applyFades(baseValue, time, clip, type);
-};
 
 
 
 /**
  * Função auxiliar isolada para aplicar os Fades de entrada e saída
  */
-const applyFades = (value: any, time: number, clip: any, type: string) => {
+const applyFades_old = (value: any, time: number, clip: any, type: string) => {
   if (type === 'opacity' || type === 'volume') {
     const isVideo = type === 'opacity';
     const fadeInDuration = isVideo ? (clip.fadein || 0) : (clip.fadeinAudio || 0);
@@ -1356,81 +1322,139 @@ const applyFades = (value: any, time: number, clip: any, type: string) => {
     }
 
     fadeModifier = Math.max(0, Math.min(1, fadeModifier));
-    return (value as number) * fadeModifier;
+
+    const finalvalue = (value as number) * fadeModifier;
+
+
+    
+    return finalvalue
   }
+
+
+
+
   return value;
 };
 
-const getInterpolatedValueWithFades_old3 = (
+
+const getInterpolatedValueWithFades = (
   timeFull: number, 
   clip: any, 
-  type: 'opacity' | 'volume' | 'speed' | 'zoom' | 'position'
+  type: 'opacity' | 'volume' | 'speed' | 'zoom' | 'position' | 'rotation3d'
 ): any => {
-  // 1. Valores Padrão (Fallbacks)
+  
   const getDefaultValue = () => {
-    if (type === 'volume') return convertDB(0.5);
-    if(type === 'zoom' ) return convertZoom(0.5);
-    if (type === 'position') return { x: 0, y: 0 } as Position;
-    return 1.0; 
+    switch (type) {
+      case 'volume': return 0; // 0dB é o volume original (unidade)
+      case 'zoom': return 1.0;
+      case 'position': return { x: 0, y: 0 };
+      case 'rotation3d': return { rot: 0, rot3d: 0 };
+      case 'speed': return 1.0;
+      case 'opacity': return 1.0;
+      default: return 0;
+    }
   };
 
   const time = timeFull - clip.start;
   const kfArray = clip.keyframes?.[type];
-  let baseValue = getDefaultValue();
+  
+  if (!kfArray || !Array.isArray(kfArray) || kfArray.length === 0) {
+    return applyFades(getDefaultValue(), time, clip, type);
+  }
 
-  if (kfArray && kfArray.length > 0) {
-    const sorted = [...kfArray].sort((a, b) => a.time - b.time);
+  const sorted = [...kfArray].sort((a, b) => a.time - b.time);
+  let baseValue: any;
 
-    if (time <= sorted[0].time) {
-      baseValue = sorted[0].value;
-    } else if (time >= sorted[sorted.length - 1].time) {
-      baseValue = sorted[sorted.length - 1].value;
-    } else {
-      for (let i = 0; i < sorted.length - 1; i++) {
-        const startKf = sorted[i];
-        const endKf = sorted[i + 1];
-        if (time >= startKf.time && time <= endKf.time) {
-          const rangeTime = endKf.time - startKf.time;
-          const progress = rangeTime === 0 ? 0 : (time - startKf.time) / rangeTime;
+  if (time <= sorted[0].time) {
+    baseValue = sorted[0].value;
+  } else if (time >= sorted[sorted.length - 1].time) {
+    baseValue = sorted[sorted.length - 1].value;
+  } else {
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const startKf = sorted[i];
+      const endKf = sorted[i + 1];
 
-          // LÓGICA PARA POSITION (Objeto)
-          if (type === 'position') {
-            const startPos = startKf.value as Position;
-            const endPos = endKf.value as Position;
-            baseValue = {
-              x: startPos.x + progress * (endPos.x - startPos.x),
-              y: startPos.y + progress * (endPos.y - startPos.y)
-            };
-          } else {
-            // LÓGICA PARA NÚMEROS (Opacity, Speed, etc)
-            baseValue = (startKf.value as number) + progress * ((endKf.value as number) - (startKf.value as number));
-          }
-          break;
+      if (time >= startKf.time && time <= endKf.time) {
+        const rangeTime = endKf.time - startKf.time;
+        const progress = rangeTime === 0 ? 0 : (time - startKf.time) / rangeTime;
+
+        if (type === 'position') {
+          const start = startKf.value;
+          const end = endKf.value;
+          baseValue = {
+            x: Number(start.x) + progress * (Number(end.x) - Number(start.x)),
+            y: Number(start.y) + progress * (Number(end.y) - Number(start.y))
+          };
+        } 
+        else if (type === 'rotation3d') {
+          const start = startKf.value;
+          const end = endKf.value;
+          baseValue = {
+            rot: Number(start.rot || 0) + progress * (Number(end.rot || 0) - Number(start.rot || 0)),
+            rot3d: Number(start.rot3d || 0) + progress * (Number(end.rot3d || 0) - Number(start.rot3d || 0))
+          };
+        } 
+        else {
+          const startVal = Number(startKf.value);
+          const endVal = Number(endKf.value);
+          baseValue = startVal + progress * (endVal - startVal);
         }
+        break;
       }
     }
   }
 
-  // 3. Aplicação de Fades (Somente para Opacity e Volume)
+  return applyFades(baseValue, time, clip, type);
+};
+
+/**
+ * Função auxiliar para aplicar Fades
+ * No volume (dB), o fade silencia subtraindo decibéis.
+ */
+const applyFades = (value: any, time: number, clip: any, type: string) => {
   if (type === 'opacity' || type === 'volume') {
     const isVideo = type === 'opacity';
     const fadeInDuration = isVideo ? (clip.fadein || 0) : (clip.fadeinAudio || 0);
-    const fadeOutDuration = isVideo ? (clip.fadeout || 0) : (clip.fadeoutAudio || 0);
+    const fadeoutDuration = isVideo ? (clip.fadeout || 0) : (clip.fadeoutAudio || 0);
     
-    let fadeModifier = 1.0;
+    let fadeModifier = 1.0; // 1.0 = sem fade
+    
     if (time < fadeInDuration && fadeInDuration > 0) {
       fadeModifier = time / fadeInDuration;
-    } else if (time > (clip.duration - fadeOutDuration) && fadeOutDuration > 0) {
-      const timeInFadeOut = time - (clip.duration - fadeOutDuration);
-      fadeModifier = 1.0 - (timeInFadeOut / fadeOutDuration);
+    } else if (time > (clip.duration - fadeoutDuration) && fadeoutDuration > 0) {
+      const timeInFadeOut = time - (clip.duration - fadeoutDuration);
+      fadeModifier = 1.0 - (timeInFadeOut / fadeoutDuration);
     }
 
     fadeModifier = Math.max(0, Math.min(1, fadeModifier));
-    return (baseValue as number) * fadeModifier;
+
+    if (type === 'volume') {
+      // LOGICA DE VOLUME EM dB:
+      // Se fadeModifier é 1, não muda nada (soma 0dB).
+      // Se fadeModifier é 0, queremos silêncio absoluto.
+      // Em áudio digital, -100dB é considerado silêncio total.
+      const silenceThreshold = -100; 
+      
+      // Mapeamos o progresso linear (0 a 1) para uma atenuação em dB
+      // Usamos uma curva logarítmica simples para o fade soar natural
+      if (fadeModifier <= 0) return silenceThreshold;
+      
+      // Atenuação: 20 * log10(fadeModifier)
+      const attenuation = 20 * Math.log10(fadeModifier);
+      
+      // O valor final é o volume base somado à atenuação (que é negativa)
+      let finalDb = (value as number) + attenuation;
+      
+      return Math.max(silenceThreshold, finalDb);
+    } else {
+      // Lógica linear para opacidade
+      return (value as number) * fadeModifier;
+    }
   }
 
-  return baseValue;
+  return value;
 };
+
 
 
 useEffect(() => {
@@ -3928,12 +3952,13 @@ const openProject = async (path: string) => {
     setIsDownloading(true);
     showNotify("Downloading...", "success");
     try {
-      await invoke('download_youtube_video', { projectPath: currentProjectPath, url: youtubeUrl });
+      await invoke('download_youtube_video', { projectPath: currentProjectPath, settingsFolder: settingsFolder ,url: youtubeUrl });
       showNotify("Download Complete!", "success");
       setIsImportModalOpen(false);
       setYoutubeUrl("");
       await loadAssets();
     } catch (e) {
+      alert(e)
       showNotify("YT-DLP Error: Check your JS Runtime", "error");
     } finally {
       setIsDownloading(false);
@@ -4467,33 +4492,7 @@ const updateClipDurationBySpeed = (clip: Clip) => {
   );
 };
 
-//convert logic 0-1 to 0.2 - 25 (0.5 is speed 1)
-const converterSpeed = (value: number): number => {
-  
-  if (value === 0.5) return 1.0;
 
-  if (value < 0.5) {
-    return 0.2 + ((value / 0.5) * (1.0 - 0.2));
-  } else {
-    const t = (value - 0.5) / 0.5;
-    return 1.0 + (t * (25.0 - 1.0));
-  }
-};
-
-
-//undoing converterSpeed
-const reverterSpeed = (realSpeed: number): number => {
-  
-  if (realSpeed === 1.0) return 0.5;
-
-  if (realSpeed < 1.0) {
-    const value = ((realSpeed - 0.2) / 0.8) * 0.5;
-    return Math.max(0, value); 
-  } else {
-    const value = ((realSpeed - 1.0) / 24.0) * 0.5 + 0.5;
-    return Math.min(1, value); 
-  }
-};
 
 
 const relocateSpeedKeyframes = (clip: Clip) => {
@@ -4769,6 +4768,9 @@ const updateKeyframes = (
   // Atualizei a tipagem para aceitar as novas chaves
   newValue: number | { x?: number; y?: number; rot?: number; rot3d?: number }
 ) => {
+
+
+  console.log('update', type, newValue)
   const threshold = 0.05;
   const relativeTime = currentTimeRef.current - clip.start;
   const safeKeyframes = clip.keyframes || {};
@@ -4786,6 +4788,13 @@ const updateKeyframes = (
       default: return 0;
     }
   };
+
+
+   /*
+   
+   newValue = type === 'volume' ? convertDB(newValue) : 
+   type === 'zoom' ? convertZoom(newValue) : newValue;
+   */
 
   // 2. Função para mesclar valores (Merge Inteligente)
   const getUpdatedValue = (oldValue: any) => {

@@ -1,4 +1,4 @@
-# 🚀 WannaCut - Professional Open Source Video Editor
+# 🚀 WannaCut - Professional Open Core Video Editor
 
 **WannaCut** is a high-performance, lightweight video editor built for the modern creator. Combining the safety of **Rust** (Tauri) with the flexibility of **React**, it offers a professional-grade timeline experience without the bloat of traditional editors.
 
@@ -152,7 +152,7 @@ npm run tauri dev
 
 ## ⚖️ License
 
-wannacut is open-source software licensed under the **GNU AGPLv3**.
+wannacut is open-core software licensed under the **GNU AGPLv3**.
 
 _Because creative tools should belong to everyone._
 

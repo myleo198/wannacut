@@ -34,6 +34,8 @@ use tauri::Manager;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use std::io::Write;
+
 
 
 use std::process::Child;
@@ -42,7 +44,6 @@ use tauri::State;
 
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandChild;
-
 
 
 //  Updated state to hold the Tauri Sidecar CommandChild
@@ -129,6 +130,30 @@ pub struct Notification {
     pub repeat: bool
 }
 
+
+#[derive(Deserialize)]
+struct EffectsData {
+    effects: Vec<Effect>,
+}
+
+#[derive(Deserialize)]
+struct Effect {
+    id: String,
+    file: String,
+    plan: String
+}
+
+struct FontsData {
+    effects: Vec<Effect>,
+}
+
+#[derive(Deserialize)]
+struct Fonts {
+    id: String,
+    file: String,
+    plan: String
+}
+
 #[tauri::command]
 async fn check_notifications(settings_path: String) -> Result<Vec<Notification>, String> {
     let path = std::path::Path::new(&settings_path).join("seen_notifications.json");
@@ -179,67 +204,6 @@ async fn check_notifications(settings_path: String) -> Result<Vec<Notification>,
 }
 
 
-#[tauri::command]
-async fn check_notifications_test(settings_path: String) -> Result<Vec<Notification>, String> {
-    let path = std::path::Path::new(&settings_path).join("seen_notifications.json");
-
-    // --- MOCK OFFLINE (Substituindo a requisição HTTP) ---
-    let data = serde_json::json!({
-      "messages": [
-        {
-          "id": "update_01",
-          "title": "Versão 2.0 Disponível!",
-          "type_": "update",
-          "description": "Adicionamos os novos efeitos de áudio Alien e Pitch.",
-          "image": "https://wannacut.app/img/promo.jpg",
-          "link_text": "Check here",
-          "link": "https://wannacut.app/blog/v2",
-          "repeat": true
-        },
-        {
-          "id": "tip_daily",
-          "title": "Dica do Dia",
-          "description": "Use a tecla 'S' para cortar clipes rapidamente.",
-          "image": null,
-          "link": null,
-          "repeat": true
-        }
-      ]
-    });
-    // --- FIM DO MOCK ---
-
-    // Converte o JSON mockado para o nosso vetor de structs
-    let remote_msgs: Vec<Notification> = serde_json::from_value(data["messages"].clone())
-        .unwrap_or_default();
-
-    // Lógica de leitura do arquivo local (para testar se o seen_notifications funciona)
-    let seen_ids: Vec<String> = if path.exists() {
-        let content = std::fs::read_to_string(&path).unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        vec![]
-    };
-
-    let mut to_show = Vec::new();
-    let mut updated_seen_ids = seen_ids.clone();
-
-    for msg in remote_msgs {
-        let already_seen = seen_ids.contains(&msg.id);
-        
-        // Regra de exibição
-        if !already_seen || msg.repeat {
-            to_show.push(msg.clone());
-            if !already_seen {
-                updated_seen_ids.push(msg.id.clone());
-            }
-        }
-    }
-
-    // Tenta salvar para você verificar se o arquivo nasce na sua pasta de settings
-    std::fs::write(path, serde_json::to_string(&updated_seen_ids).unwrap()).ok();
-
-    Ok(to_show)
-}
 
 #[derive(Serialize)]
 struct ExportPayload {
@@ -638,6 +602,49 @@ fn save_project_data(project_path: String, data: String, timestamp: u64) -> Resu
 
 
 #[tauri::command]
+fn list_fonts_new(path: String) -> Vec<String> {
+    let mut fonts = Vec::new();
+    if let Ok(entries) = fs::read_dir(format!("{}/fonts", path)) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            if let Some(name) = entry.file_name().to_str() {
+                fonts.push(name.to_string());
+            }
+        }
+    }
+    fonts
+}
+
+// No main.rs
+
+#[tauri::command]
+async fn fetch_cloud_fonts() -> Result<serde_json::Value, String> {
+    let url = "https://wannacut.app/fonts.json";
+    let client = reqwest::Client::new();
+    
+    let response = client.get(url)
+        .header("User-Agent", "WannaCut-App")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let json = response.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(json)
+}
+
+#[tauri::command]
+async fn download_font_file(url: String, path: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let content = response.bytes().await.map_err(|e| e.to_string())?;
+    
+    fs::write(path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn list_fonts(fonts_path: String) -> Result<Vec<String>, String> {
     let mut fonts = Vec::new();
     let path = Path::new(&fonts_path);
@@ -693,31 +700,148 @@ fn load_specific_project(project_path: String, file_name: String) -> Result<Stri
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn download_youtube_video(project_path: String, url: String) -> Result<String, String> {
-    let mut download_path = std::path::PathBuf::from(&project_path);
-    download_path.push("videos");
 
-    let output = Command::new("yt-dlp")
-        .args([
-            "--no-check-certificate",
-            "--prefer-free-formats",
-            "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            "-o", &format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()),
-            &url,
-        ])
+// Função para baixar o binário inicial se ele não existir
+async fn download_initial_binary(bin_path: &Path) -> Result<(), String> {
+    println!("Binary not found. Starting download of official yt-dlp...");
+
+    let url = if cfg!(target_os = "windows") {
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    } else {
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+    };
+
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| format!("Failed to connect to GitHub: {}", e))?;
+
+    let content = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to download binary: {}", e))?;
+
+    let mut file = File::create(bin_path)
+        .map_err(|e| format!("Failed to create binary file: {}", e))?;
+
+    file.write_all(&content)
+        .map_err(|e| format!("Failed to write binary to disk: {}", e))?;
+
+    // No Linux/Mac, we need to grant execution permissions to the downloaded file
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(bin_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(bin_path, perms).ok();
+    }
+
+    println!("yt-dlp download completed successfully.");
+    Ok(())
+}
+
+
+
+// Função para atualizar o yt-dlp existente
+async fn update_ytdlp(bin_path: &Path) -> Result<(), String> {
+    println!("Iniciando Lazy Update do yt-dlp...");
+    let output = Command::new(bin_path)
+        .arg("-U")
         .output()
-        .map_err(|e| format!("Failed to execute yt-dlp: {}", e))?;
+        .map_err(|e| format!("Falha ao executar comando de update: {}", e))?;
 
     if output.status.success() {
-        Ok("Download completed successfully".into())
+        Ok(())
     } else {
         let err = String::from_utf8_lossy(&output.stderr);
-        Err(format!("yt-dlp error: {}", err))
+        Err(format!("Erro interno no update: {}", err))
     }
 }
+
+#[tauri::command]
+async fn download_youtube_video(
+    project_path: String, 
+    settings_folder: String, 
+    url: String
+) -> Result<String, String> {
+    // 1. Configuração de caminhos
+    let mut download_path = PathBuf::from(&project_path);
+    download_path.push("videos");
+
+    let bin_dir = PathBuf::from(&settings_folder).join("bin");
+    let bin_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
+    let bin_path = bin_dir.join(bin_name);
+
+    // 2. Garantir que as pastas existam
+    if !download_path.exists() {
+        fs::create_dir_all(&download_path).map_err(|e| e.to_string())?;
+    }
+    if !bin_dir.exists() {
+        fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
+    }
+
+    // 3. SE NÃO EXISTE O ARQUIVO, BAIXA AGORA
+    if !bin_path.exists() {
+        download_initial_binary(&bin_path).await?;
+    }
+
+    // 4. Definição do comando de download
+    let run_download = |path_to_bin: &Path| {
+        Command::new(path_to_bin)
+            .args([
+                "--no-check-certificate",
+                "--prefer-free-formats",
+                "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "--merge-output-format", "mp4",
+                "-o", &format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()),
+                &url,
+            ])
+            .output()
+    };
+
+    // --- TENTATIVA 1 ---
+    let output = run_download(&bin_path).map_err(|e| format!("Erro ao iniciar yt-dlp: {}", e))?;
+
+    if output.status.success() {
+        return Ok("Download completed successfully".into());
+    }
+
+    // --- LÓGICA DE LAZY UPDATE (Se o download falhar por versão antiga) ---
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("update") || stderr.contains("403") || stderr.contains("Sign in") {
+        update_ytdlp(&bin_path).await?;
+
+        // TENTATIVA 2
+        let output_retry = run_download(&bin_path).map_err(|e| format!("Erro no retry: {}", e))?;
+        if output_retry.status.success() {
+            return Ok("Download successful after core update".into());
+        } else {
+            let err_retry = String::from_utf8_lossy(&output_retry.stderr);
+            return Err(format!("Falha persistente após update: {}", err_retry));
+        }
+    }
+
+    Err(format!("yt-dlp error: {}", stderr))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #[tauri::command]
 async fn import_asset(project_path: String, file_path: String) -> Result<String, String> {
@@ -1087,6 +1211,72 @@ async fn init_settings_structure(path: String) -> Result<(), String> {
 
 
 
+#[tauri::command]
+fn open_font_folder(path: String) -> Result<(), String> {
+    // Constrói o caminho completo para a pasta de fontes
+    let font_path = std::path::Path::new(&path).join("fonts");
+
+    // Cria a pasta caso ela ainda não exista (evita erro ao abrir)
+    if !font_path.exists() {
+        std::fs::create_dir_all(&font_path).map_err(|e| e.to_string())?;
+    }
+
+    // Lógica para abrir o gerenciador de arquivos dependendo do SO
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(font_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(font_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(font_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+
+
+#[tauri::command]
+async fn sync_video_effect(settings_folder: String, video_name: String) -> Result<String, String> {
+    let effects_path = std::path::Path::new(&settings_folder).join("effects");
+    let file_path = effects_path.join(&video_name);
+
+    // Cria a pasta se não existir
+    if !effects_path.exists() {
+        std::fs::create_dir_all(&effects_path).map_err(|e| e.to_string())?;
+    }
+
+    // Se já existe, retorna o caminho
+    if file_path.exists() {
+        return Ok(file_path.to_string_lossy().into_owned());
+    }
+
+    // Download do servidor
+    let url = format!("https://wannacut.app/assets/effects/{}", video_name);
+    let client = reqwest::Client::new();
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    
+    let content = response.bytes().await.map_err(|e| e.to_string())?;
+    std::fs::write(&file_path, content).map_err(|e| e.to_string())?;
+
+    Ok(file_path.to_string_lossy().into_owned())
+}
+
 
 fn main() {
     thread::spawn(move || {
@@ -1184,7 +1374,11 @@ fn main() {
             transfer_folder_content,
             list_fonts,
             get_image_data,
-            check_notifications
+            check_notifications,
+            download_font_file,
+            fetch_cloud_fonts,
+            open_font_folder,
+            sync_video_effect
            
         ])
         .run(tauri::generate_context!())
