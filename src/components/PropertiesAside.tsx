@@ -693,7 +693,7 @@ const EffectControl = ({ effect, onUpdate }) => {
     case 'glitch_flash':
     case 'film_grain':
     case 'film_grain_dust':
-      return renderSlider('Grain & Dust', 'intensity', 0, 100, 1);
+      return renderSlider('Intensity', 'intensity', 0, 100, 1);
     case 'microphone':
     case 'alien':
       return renderToggle('Effect Active', 'active');
