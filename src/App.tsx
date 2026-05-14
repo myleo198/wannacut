@@ -70,7 +70,7 @@ import {
 
 import Waveform from "@/components/Waveform";
 import Notifications, { NotificationsRef } from './components/Notification';
-import { getDrawFrameFunction, RenderEngineContext } from './renderBridge';
+import { getDrawFrameFunction, exportVideo, RenderEngineContext } from './renderBridge';
 import { SettingsModal } from './components/SettingsModal';
 import { PropertiesAside } from '@/components/PropertiesAside';
 import { ItensAside } from './components/ItensAside';
@@ -947,88 +947,48 @@ const handleCancelExport = async () => {
 // Dentro da sua função de exportação no App.tsx
 const startExport = async () => {
   try {
-    // 1. Ativa a UI de renderização e zera o progresso
     setRenderPercent(0);
-    setRenderStatus('rendering'); 
+    setRenderStatus('rendering');
 
+    if (!currentProjectPath) return;
 
-    if(!currentProjectPath)
-     return
+    const safeName = (currentProjectPath as string).replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-  const safeName = currentProjectPath.replace(/[^a-z0-0]/gi, '_').toLowerCase();
-
-  const targetPath = await save({
-    title: 'Export Final Video',
-    filters: [{
-      name: 'Video',
-      extensions: ['mp4']
-    }],
-    defaultPath: `${safeName}.mp4`
-  });
-
-  // If the user cancels the dialog, targetPath will be null
-  if (!targetPath) return;
-
-
-  const sanitizeNumber = (num: number): number => {
-  return Math.round(num * 100) / 100;
-};
-
-  const sorted_tracks = order_tracks();
-  const sortedTracksId = sorted_tracks.map(t => t.id);
-
-  const clips_format = await Promise.all(clips.map(async (c) => {
-      // Criamos uma cópia para não mexer no estado original da UI
-      let fontPath = c.font;
-
-      if (c.type === 'text') {
-        const fontsDir = `${localStorage.getItem("wannacut_settings_folder")}/fonts`;
-        try {
-          const fontPaths = await invoke<string[]>('list_fonts', { fontsPath: fontsDir });
-          
-          for (const path of fontPaths) {
-            const fontName = path.split(/[\\/]/).pop()?.split('.')[0] || "Unknown";
-            if (fontName.toLowerCase() === c.font?.toLowerCase()) {
-              fontPath = path; // Define o caminho completo da fonte
-              break;
-            }
-          }
-        } catch (e) {
-          console.error("Erro ao listar fontes:", e);
-        }
-      }
-
-      return {
-        ...c,
-        font: fontPath, // Usa o path resolvido
-        path: `${currentProjectPath}/videos/${c.name}`,
-        type: c.type ? c.type : knowTypeByAssetName(c.name),
-        mute: c.mute ?? false,
-        beginmoment: sanitizeNumber(c.beginmoment),
-        duration: sanitizeNumber(c.duration),
-        start: sanitizeNumber(c.start)
-      };
-    })
-  );
-
-
-  const sort_clip = clips_format.sort((a, b) => {
-    const trackA = sortedTracksId.indexOf(a.trackId);
-    const trackB = sortedTracksId.indexOf(b.trackId);
-    return trackA - trackB;
-  })
-
-    // 2. Agora o clips_format é um array real de objetos, não de Promises
-    await invoke('export_video', {
-      projectPath: currentProjectPath,
-      exportPath: targetPath,
-      wannacutSettings: localStorage.getItem("wannacut_settings_folder"),
-      projectDimensions: { 
-        width: projectConfig.width || 1920, // Corrigido de 1980 para 1920 (padrão HD)
-        height: projectConfig.height || 1080 
-      },
-      clips: sort_clip
+    const targetPath = await save({
+      title: 'Export Final Video',
+      filters: [{ name: 'Video', extensions: ['mp4'] }],
+      defaultPath: `${safeName}.mp4`,
     });
+
+    if (!targetPath) {
+      setRenderStatus('idle');
+      return;
+    }
+
+    const fps = projectConfig.fps || 30;
+
+    await exportVideo({
+      targetPath: targetPath as string,
+      fps,
+      projectConfig,
+      currentProjectPath: currentProjectPath as string,
+      clips: makeSortClips(),
+      sceneRef,
+      rendererRef,
+      cameraRef,
+      groupsRef,
+      getInterpolatedValueWithFades,
+      settingsFolder: settingsFolder ?? undefined,
+      onProgress: (percent) => {
+        setRenderPercent(percent);
+      },
+      onError: (msg) => {
+        console.error("Export Error:", msg);
+        setRenderStatus('idle');
+      },
+    });
+
+    setRenderStatus('success');
 
   } catch (error) {
     console.error("Export Error:", error);
@@ -1036,6 +996,40 @@ const startExport = async () => {
   }
 };
 
+  const sanitizeNumber = (num: number): number => {
+  return Number(Math.round(num * 100) / 100);
+};
+
+
+const makeSortClips = (nowclips: null | Clip[] = null) => {
+  const sorted_tracks = order_tracks();
+  const sortedTracksId = sorted_tracks.map(t => t.id);
+
+  const clips_here = nowclips ? nowclips : clips;
+
+  if (clips_here.length === 0) return [];
+
+  const clips_format = clips_here.map((c) => {
+    
+    return {
+      ...c,
+      path: `${currentProjectPath}/videos/${c.name}`,
+      type: c.type ? c.type : knowTypeByAssetName(c.name),
+      mute: c.mute ?? false,
+      beginmoment: sanitizeNumber(c.beginmoment),
+      duration: sanitizeNumber(c.duration),
+      start: sanitizeNumber(c.start)
+    };
+  });
+
+  const sort_clip = clips_format.sort((a, b) => {
+    const trackA = sortedTracksId.indexOf(a.trackId);
+    const trackB = sortedTracksId.indexOf(b.trackId);
+    return trackA - trackB;
+  });
+
+  return sort_clip;
+};
 
 
 //code to video preview
@@ -1121,11 +1115,12 @@ useEffect(() => {
 const updateAudio = () => {
   
   //filter images cause it don't has audio
+  
 
   const currentClips = clips.filter(clip => 
     currentTime >= clip.start  && 
     currentTime <= (clip.start  + clip.duration) && 
-    knowTypeByAssetName(clip.name) !== 'image' &&
+    knowTypeByAssetName(clip.name) !== 'image' && knowTypeByAssetName(clip.name) !== 'text' &&
     (tracks.find(t => t.id === clip.trackId)?.mute === false ||
     !(tracks.find(t => t.id === clip.trackId)?.mute)) &&
     (clip?.mute === false ||
@@ -1506,10 +1501,124 @@ const getOpacityAtTime = (clip: Clip) => {
 
 // Objetos do Core Engine
 
-//const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-//const sceneRef = useRef<THREE.Scene | null>(null);
-//const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
-//const planesRef = useRef<Map<string, THREE.Mesh>>(new Map()); // Guarda os planos de cada clip
+// 1. Inicialize com null
+/*
+
+const [frameSrc, setFrameSrc] = useState<string | null>(null);
+
+ const lastRenderTime = useRef(0);
+ const RENDER_INTERVAL = 1000 / 15; // Limita o preview a 15 FPS para suavidade
+
+
+ const isRendering = useRef(false);
+
+
+const newDrawFrame = async (time: number | null = null) => {
+    if (isRendering.current) return;
+
+    const now = Date.now();
+    if (isPlaying && now - lastRenderTime.current < 50) return;
+
+    isRendering.current = true;
+
+    try {
+        const targetTime = time !== null ? time : currentTime;
+        const currentClips = topClips.current ?? [];
+
+        if (currentClips.length === 0) {
+            setFrameSrc(null);
+            return;
+        }
+
+        // FAST PATH: só vídeo simples (1 clip, sem efeitos, sem texto, sem rotação 3D)
+        // Imagens SEMPRE vão pelo Python — o Rust não compõe no canvas do projeto
+        // e não aplica zoom/posição corretamente para imagens estáticas.
+        const hasComplexity = currentClips.some(c =>
+            (c.effects && c.effects.length > 0) ||
+            c.type === 'text' ||
+            (c.keyframes?.rotation3d && c.keyframes.rotation3d.length > 0) ||
+            (c.keyframes?.zoom && c.keyframes.zoom.some(k =>
+                typeof k.value === 'number' && k.value !== 1.0
+            ))
+        );
+
+        const clipType0 = currentClips[0]?.type ?? knowTypeByAssetName(currentClips[0]?.name ?? '');
+        const isSingleSimpleVideo = !hasComplexity && currentClips.length === 1 && clipType0 === 'video';
+
+        if (isSingleSimpleVideo) {
+            const clip = currentClips[0];
+            const assetPath = `${currentProjectPath}/videos/${clip.name}`;
+            const localT = targetTime - clip.start;
+            const seekMs = ((clip.beginmoment ?? 0) + localT) * 1000;
+
+            try {
+                const frameData = await invoke<string>('get_video_frame', {
+                    path: assetPath,
+                    timeMs: seekMs
+                });
+                setFrameSrc(frameData);
+                lastRenderTime.current = Date.now();
+                return;
+            } catch {
+                // se falhar no fast path, cai no Python abaixo
+            }
+        }
+
+        // 🐢 SLOW PATH: Python para composição complexa (múltiplos clips, efeitos, texto)
+        const frameData = await invoke<string>('get_preview_frame', {
+            data: {
+                project_path: currentProjectPath,
+                project_dimensions: { width: projectConfig.width, height: projectConfig.height },
+                clips: makeSortClips(topClips.current),
+                preview_time: targetTime,
+                fps: 10,
+                is_preview: true
+            }
+        });
+
+        if (frameData) {
+            setFrameSrc(frameData);
+            lastRenderTime.current = Date.now();
+        }
+    } catch (e) {
+        console.error("Erro no motor:", e);
+    } finally {
+        isRendering.current = false;
+    }
+};
+
+
+
+const lastDrawTimeRef = useRef<number>(0);
+const FPS_target = 10;
+const frameInterval = 1000 / FPS_target; // 100ms
+
+
+useEffect(() => {
+  
+    updatePreview(currentTime);
+    updateAudio();
+
+    const now = performance.now();
+    if (now - lastDrawTimeRef.current >= frameInterval) {
+      newDrawFrame()  
+      lastDrawTimeRef.current = now; 
+    }
+  
+}, [currentTime, clips]);
+
+
+
+
+const lastUpdateRef = useRef<number>(0); 
+
+const currentTimeRef = useRef(0);
+
+
+
+*/
+
+
 
 
 
@@ -1565,6 +1674,7 @@ useEffect(() => {
     }
   };
 }, [canvasRef.current, projectConfig.width, projectConfig.height]); // Adicionado canvasRef.current aqui
+
 
 
 
@@ -1673,7 +1783,6 @@ useEffect(() => {
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
   };
 }, [isPlaying]);
-
 
 
 
@@ -5404,6 +5513,7 @@ return (
                   onClick={togglePlay}
                 >
                   {/* O Canvas agora preenche o contêiner que tem a proporção correta */}
+
                   <canvas 
                     ref={canvasRef}
                     onContextMenu={(e) => {
@@ -5451,6 +5561,7 @@ return (
                     style={{ cursor: canvasCursor }}
                     className="absolute inset-0 w-full h-full"
                   />
+                  
 
                   {interactionMode === 'transform' && selectedClipIdRef.current && (
                     <div className="absolute inset-0 pointer-events-none">

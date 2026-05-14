@@ -45,6 +45,9 @@ use tauri::State;
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandChild;
 
+use serde_json::json;
+
+
 
 //  Updated state to hold the Tauri Sidecar CommandChild
 pub struct ExportState(pub Mutex<Option<CommandChild>>);
@@ -827,17 +830,74 @@ async fn download_youtube_video(
 
 
 
+use serde_json::Value;
+use tauri_plugin_shell::process::CommandEvent;
 
 
+#[tauri::command]
+async fn get_preview_frame(
+    app_handle: tauri::AppHandle,
+    data: serde_json::Value
+) -> Result<String, String> {
 
+    let mut input_json = data.to_string();
+    input_json.push('\n');
 
+    // ✅ FIX 2: PYTHONUNBUFFERED=1 garante que o stdout do Python não fica bufferizado
+    let (mut rx, mut child) = app_handle
+        .shell()
+        .sidecar("exporter")
+        .map_err(|e| e.to_string())?
+        .env("PYTHONUNBUFFERED", "1")   // <-- estava faltando aqui
+        .spawn()
+        .map_err(|e| e.to_string())?;
 
+    // ✅ FIX 1: Escreve o JSON e fecha o stdin imediatamente
+    // Sem isso, o Python fica em readline() esperando mais dados
+    child.write(input_json.as_bytes()).map_err(|e| e.to_string())?;
 
+    let mut base64_result = String::new();
+    let mut stderr_log = String::new();
 
+    // ✅ FIX 3: Timeout de 30s para não travar a UI se o Python crashar
+    let timeout = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(bytes) => {
+                        let line = String::from_utf8_lossy(&bytes);
+                        if line.contains("FRAME_DATA:") {
+                            base64_result = line.replace("FRAME_DATA:", "").trim().to_string();
+                            let _ = child.kill();
+                            break;
+                        }
+                    }
+                    CommandEvent::Stderr(bytes) => {
+                        let msg = String::from_utf8_lossy(&bytes).to_string();
+                        println!("[Python Preview] {}", msg.trim());
+                        stderr_log.push_str(&msg);
+                    }
+                    CommandEvent::Terminated(_) => break,
+                    _ => {}
+                }
+            }
+        }
+    ).await;
 
+    if timeout.is_err() {
+        return Err("Timeout: o motor Python demorou mais de 30s para responder".into());
+    }
 
+    if base64_result.is_empty() {
+        return Err(format!(
+            "O motor Python não respondeu. Log de erro:\n{}",
+            if stderr_log.is_empty() { "(sem output no stderr)".into() } else { stderr_log }
+        ));
+    }
 
-
+    Ok(base64_result)
+}
 
 
 
@@ -1334,6 +1394,174 @@ fn main() {
     }
 });
 
+// ---------------------------------------------------------------------------
+// ENGINE EXPORT: recebe frames PNG e WAV do frontend e monta o vídeo final
+// ---------------------------------------------------------------------------
+
+/// Salva um frame PNG (base64) na pasta de frames temporários do projeto.
+/// Chamado a cada frame renderizado pelo motor Three.js no frontend.
+#[tauri::command]
+async fn save_export_frame(
+    project_path: String,
+    frame_index: u32,
+    png_base64: String,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let frames_dir = std::path::Path::new(&project_path).join("export_frames");
+    std::fs::create_dir_all(&frames_dir)
+        .map_err(|e| format!("Erro ao criar pasta de frames: {}", e))?;
+
+    let frame_path = frames_dir.join(format!("{:06}.png", frame_index));
+
+    let b64_data = png_base64.split(',').last().unwrap_or(&png_base64);
+    let bytes = general_purpose::STANDARD
+        .decode(b64_data)
+        .map_err(|e| format!("Erro ao decodificar base64 do frame {}: {}", frame_index, e))?;
+
+    std::fs::write(&frame_path, bytes)
+        .map_err(|e| format!("Erro ao salvar frame {}: {}", frame_index, e))?;
+
+    Ok(())
+}
+
+
+
+
+/// Salva o WAV de áudio gerado pelo OfflineAudioContext do frontend.
+/// O frontend já faz todo o mix, efeitos e volume — o Rust só guarda o arquivo.
+#[tauri::command]
+async fn save_export_audio(
+    project_path: String,
+    wav_base64: String,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let audio_path = std::path::Path::new(&project_path).join("export_audio_mix.wav");
+
+    let b64_data = wav_base64.split(',').last().unwrap_or(&wav_base64);
+    let bytes = general_purpose::STANDARD
+        .decode(b64_data)
+        .map_err(|e| format!("Erro ao decodificar base64 do WAV: {}", e))?;
+
+    std::fs::write(&audio_path, bytes)
+        .map_err(|e| format!("Erro ao salvar WAV: {}", e))?;
+
+    Ok(())
+}
+
+/// Após todos os frames e o WAV serem salvos, monta o vídeo final com FFmpeg:
+///   1. PNGs → vídeo sem áudio
+///   2. Vídeo + WAV → arquivo final (ou só vídeo se não há WAV)
+///
+/// O frontend já fez todo o processamento de áudio (mix, efeitos, volume, posicionamento).
+/// O Rust apenas combina os dois streams com FFmpeg.
+#[tauri::command]
+async fn assemble_exported_video(
+    app_handle: tauri::AppHandle,
+    project_path: String,
+    target_path: String,
+    fps: u32,
+    duration: f64,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let proj = std::path::Path::new(&project_path);
+    let frames_dir = proj.join("export_frames");
+    let audio_wav_path = proj.join("export_audio_mix.wav");
+    let video_only_path = proj.join("export_video_only.mp4");
+    let frame_pattern = frames_dir.join("%06d.png");
+
+    // -----------------------------------------------------------------------
+    // PASSO 1: PNGs → vídeo sem áudio
+    // -----------------------------------------------------------------------
+    let step1 = app_handle
+        .shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| e.to_string())?
+        .args([
+            "-y",
+            "-framerate", &fps.to_string(),
+            "-i", &frame_pattern.to_string_lossy(),
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-vf", &format!("scale={}:{}", width, height),
+            &video_only_path.to_string_lossy(),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("FFmpeg (frames→video) falhou: {}", e))?;
+
+    if !step1.status.success() {
+        return Err(format!(
+            "FFmpeg (frames→video) erro: {}",
+            String::from_utf8_lossy(&step1.stderr)
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // PASSO 2: Combina vídeo + WAV (ou só vídeo se não há áudio)
+    // O WAV já foi gerado pelo OfflineAudioContext no frontend com:
+    //   - posicionamento correto de cada clip (start, beginmoment, duration)
+    //   - todos os efeitos aplicados (pitch, alien, microphone)
+    //   - curva de volume com keyframes e fades
+    // -----------------------------------------------------------------------
+    let has_audio = audio_wav_path.exists();
+
+    let mut final_args: Vec<String> = vec!["-y".into()];
+    final_args.push("-i".into());
+    final_args.push(video_only_path.to_string_lossy().to_string());
+
+    if has_audio {
+        final_args.push("-i".into());
+        final_args.push(audio_wav_path.to_string_lossy().to_string());
+        final_args.push("-c:v".into());
+        final_args.push("copy".into());
+        final_args.push("-c:a".into());
+        final_args.push("aac".into());
+        final_args.push("-b:a".into());
+        final_args.push("192k".into());
+        final_args.push("-t".into());
+        final_args.push(format!("{:.6}", duration));
+    } else {
+        final_args.push("-c".into());
+        final_args.push("copy".into());
+    }
+
+    final_args.push(target_path.clone());
+
+    let final_args_ref: Vec<&str> = final_args.iter().map(|s| s.as_str()).collect();
+
+    let step2 = app_handle
+        .shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| e.to_string())?
+        .args(&final_args_ref)
+        .output()
+        .await
+        .map_err(|e| format!("FFmpeg (mux final) falhou: {}", e))?;
+
+    if !step2.status.success() {
+        return Err(format!(
+            "FFmpeg (mux final) erro: {}",
+            String::from_utf8_lossy(&step2.stderr)
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // LIMPEZA
+    // -----------------------------------------------------------------------
+    let _ = std::fs::remove_dir_all(&frames_dir);
+    let _ = std::fs::remove_file(&video_only_path);
+    let _ = std::fs::remove_file(&audio_wav_path);
+
+    let _ = app_handle.emit("export-progress", 100u32);
+
+    Ok(())
+}
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
@@ -1341,6 +1569,9 @@ fn main() {
         // Custom protocol for serving local video files with range-request support
         .manage(ExportState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
+            save_export_frame,
+            save_export_audio,
+            assemble_exported_video,
             list_projects, 
             delete_project, 
             import_asset, 
@@ -1378,7 +1609,8 @@ fn main() {
             download_font_file,
             fetch_cloud_fonts,
             open_font_folder,
-            sync_video_effect
+            sync_video_effect,
+            get_preview_frame
            
         ])
         .run(tauri::generate_context!())
