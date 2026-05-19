@@ -2,9 +2,9 @@
 
 **WannaCut** is a high-performance, lightweight video editor built for the modern creator. Combining the safety of **Rust** (Tauri) with the flexibility of **React**, it offers a professional-grade timeline experience without the bloat of traditional editors.
 
-**I am trying to creating the Free CapCut available even for Linux, MacOS and Windows. More complet than OpenCut:  So give a start to the project if you like.**  **I am accepting recommendations**
+**This is Free CapCut available for Linux and Windows. More complet than OpenCut:  So give a start to the project if you like.**  **I am accepting recommendations**
 
-> **Status:** 🛠️ _Under Active Development (Alpha)_
+> **Status:** 🛠️ _Premiere Version is Coming (Beta)_
 
 ----------
 
@@ -12,11 +12,11 @@
 
 **Project Manager**
 
-![Texto Alternativo](./img_readme/manager2.png)
+![Texto Alternativo](./img_readme/home.png)
 
 **Professional Timeline**
 
-![Texto Alternativo](./img_readme/preview_video_2.png)
+![Texto Alternativo](./img_readme/main.png)
 
 **Clips's Context Menu and Keyframes**
 
@@ -28,6 +28,9 @@
 
 ![Texto Alternativo](./img_readme/fadeinout.png)
 
+** Effects for video and audio **
+
+![Texto Alternativo](./img_readme/main2.png)
 
  ----------
 
