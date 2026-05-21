@@ -9,7 +9,7 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
-  resolve: {
+  resolve: {preserveSymlinks: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
@@ -38,7 +38,8 @@ export default defineConfig(async () => ({
     fs: {
       allow: [
         '.', // Permite a raiz do projeto
-        'src-tauri/bin/core' // Permite especificamente sua pasta secreta
+        'src-tauri/bin/core', // Permite especificamente sua pasta secreta
+        '..'
       ]
     }
   },

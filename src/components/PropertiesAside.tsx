@@ -447,7 +447,10 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
       )}
       
       {/* SPEED */}
+      
+      
       {
+        /*
         ( !isText && !isImage ) && ( <PropertyRow label="Playback Speed" keyframable={false}>
         <div className="flex items-center gap-3">
           <Wind size={12} className="text-sky-400" />
@@ -463,7 +466,11 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
           </select>
         </div>
       </PropertyRow>)
+
+      */
       }
+      
+      
 
           {/* ROTATION */}
           {(isVideo || isText || isImage) && 

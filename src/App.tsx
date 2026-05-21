@@ -772,6 +772,9 @@ const [renderPercent, setRenderPercent] = useState(0);
 const [isMouseOverSource, setIsMouseOverSource] = useState(false);
 const [currentTime2, setCurrentTime2] = useState(0); // Playhead time
 const [isPlaying2, setIsPlaying2] = useState(false); 
+const sourceDuration2 = useRef<number>(0);   // duração real do asset (via invoke)
+const hasAudio2 = useRef<boolean>(true);      // false quando o asset não tem áudio
+const internalTime2 = useRef<number>(0);      // relógio manual de fallback sem áudio
 
 
 
@@ -1630,42 +1633,30 @@ const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
 const groupsRef = useRef<Map<string, THREE.Group>>(new Map());
 // const lastFrameTimeRef = useRef<number>(0);
 
+// INIT: cria renderer, cena e câmera uma única vez quando o canvas monta
 useEffect(() => {
-  // Se o canvas não existe ou se já inicializamos, não faz nada
   if (!canvasRef.current || rendererRef.current) return;
 
-  const initEngine = () => {
-    const width = projectConfig.width;
-    const height = projectConfig.height;
+  const renderer = new THREE.WebGLRenderer({
+    canvas: canvasRef.current!,
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance"
+  });
+  renderer.setSize(projectConfig.width, projectConfig.height, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  rendererRef.current = renderer;
 
-    // 1. Renderer
-    const renderer = new THREE.WebGLRenderer({
-      canvas: canvasRef.current!,
-      alpha: true,
-      antialias: true,
-      powerPreference: "high-performance"
-    });
-    renderer.setSize(width, height, false);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    rendererRef.current = renderer;
+  sceneRef.current = new THREE.Scene();
 
-    // 2. Cena
-    const scene = new THREE.Scene();
-    sceneRef.current = scene;
+  const fov    = 45;
+  const camera = new THREE.PerspectiveCamera(fov, projectConfig.width / projectConfig.height, 0.1, 10000);
+  const zPos   = (projectConfig.height / 2) / Math.tan((fov * Math.PI) / 360);
+  camera.position.set(projectConfig.width / 2, -projectConfig.height / 2, zPos);
+  camera.lookAt(projectConfig.width / 2, -projectConfig.height / 2, 0);
+  cameraRef.current = camera;
 
-    // 3. Câmera
-    const fov = 45;
-    const aspect = width / height;
-    const camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 10000);
-    const zPos = (height / 2) / Math.tan((fov * Math.PI) / 360);
-    camera.position.set(width / 2, -height / 2, zPos);
-    camera.lookAt(width / 2, -height / 2, 0);
-    cameraRef.current = camera;
-    
-    console.log("🚀 Three.js Engine Inicializado com Sucesso");
-  };
-
-  initEngine();
+  console.log("🚀 Three.js Engine Inicializado com Sucesso");
 
   return () => {
     if (rendererRef.current) {
@@ -1673,9 +1664,24 @@ useEffect(() => {
       rendererRef.current = null;
     }
   };
-}, [canvasRef.current, projectConfig.width, projectConfig.height]); // Adicionado canvasRef.current aqui
+}, [canvasRef.current]); // roda só quando o canvas monta
 
+// RESIZE: quando projectConfig.width/height muda, atualiza renderer e câmera sem recriar tudo
+useEffect(() => {
+  const { width, height } = projectConfig;
+  if (!rendererRef.current || !cameraRef.current) return;
 
+  rendererRef.current.setSize(width, height, false);
+
+  const fov  = 45;
+  const zPos = (height / 2) / Math.tan((fov * Math.PI) / 360);
+  cameraRef.current.aspect = width / height;
+  cameraRef.current.updateProjectionMatrix();
+  cameraRef.current.position.set(width / 2, -height / 2, zPos);
+  cameraRef.current.lookAt(width / 2, -height / 2, 0);
+
+  console.log(`🔧 Three.js redimensionado para ${width}×${height}`);
+}, [projectConfig.width, projectConfig.height]);
 
 
 
@@ -2777,25 +2783,29 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
 
 
 const isMouseOverRef = useRef(false);
+const isPlaying2Ref = useRef(false); // espelha isPlaying2 para uso em closures
+
+// Mantém isPlaying2Ref sempre sincronizado com isPlaying2
+useEffect(() => {
+  isPlaying2Ref.current = isPlaying2;
+}, [isPlaying2]);
 
 useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
-    
-    
-    
-    
     if (!isMouseOverRef.current) return;
 
     if (e.code === 'Space') {
       e.preventDefault();
-      togglePlay2();
+      setIsPlaying2(prev => !prev);
     }
 
+    // Usa o relógio correto (áudio ou interno)
+    const time = (audioRef2.current && hasAudio2.current)
+      ? (audioRef2.current.currentTime || 0)
+      : internalTime2.current;
 
-    const time = audioRef2.current?.currentTime || 0
     if (e.key.toLowerCase() === 'i') setInPoint(time);
     if (e.key.toLowerCase() === 'o') setOutPoint(time);
-
   };
 
   window.addEventListener('keydown', handleKeyDown);
@@ -3249,71 +3259,91 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
       }
     };
 
-    //Sync Canvas with Audio
+    // Carrega o sourceAsset: busca duração via invoke e configura áudio (se houver)
     useEffect(() => {
+      if (!sourceAsset) return;
 
-      
-      if(!sourceAsset) return
-      if(!audioRef2.current) return
-
-      if (isPlaying2) {
-
-        
-        
-        const interval = setInterval(() => {
-          if (audioRef2.current) {
-            const time = audioRef2.current.currentTime;
-            setCurrentTime2(time);
-            renderFrame2(time);
-          }
-        }, 1000 / 10); // 30 FPS
-        return () => clearInterval(interval);
-        
-        
-      }
-    }, [isPlaying2, sourceAsset, currentTime2]);
-
-
-
-
-    const togglePlay2 =  () => {
-  if (!audioRef2.current) return;
-
-
-  try {
-    if (audioRef2.current.paused) {
-      audioRef2.current.volume = 1;
-
-      audioRef2.current.play();
-      //console.log('audio played')
-      setIsPlaying2(true);
-    } else {
-      audioRef2.current.pause();
+      // Reset ao trocar de asset
+      hasAudio2.current = true;
+      internalTime2.current = 0;
+      sourceDuration2.current = 0;
+      setCurrentTime2(0);
       setIsPlaying2(false);
-    }
-  } catch (err) {
-    console.error("Erro in Play/Pause:", err);
-  }
-};
+
+      // Busca duração real via invoke (funciona com ou sem áudio)
+      const filePath = `${currentProjectPath}/videos/${sourceAsset.name}`;
+      invoke<{ duration: number }>('get_duration', { path: filePath })
+        .then(meta => { sourceDuration2.current = meta.duration; })
+        .catch(() => { sourceDuration2.current = 0; });
+
+      // Tenta carregar o áudio extraído; marca hasAudio2=false se falhar
+      if (audioRef2.current) {
+        const audioEl = audioRef2.current;
+        const audio = `${sourceAsset.name.split('.').slice(0, -1).join('.')}.mp3`;
+        const path = knowTypeByAssetName(sourceAsset.name) === 'video'
+          ? `http://127.0.0.1:1234/${encodeURIComponent(`${currentProjectPath}/extracted_audios/${audio}`)}`
+          : `http://127.0.0.1:1234/${encodeURIComponent(`${currentProjectPath}/videos/${sourceAsset.name}`)}`;
+
+        const handleError = () => { hasAudio2.current = false; };
+        audioEl.addEventListener('error', handleError);
+        audioEl.src = path;
+
+        return () => { audioEl.removeEventListener('error', handleError); };
+      }
+    }, [sourceAsset]);
 
 
-    useEffect( () => {
+    // Sync Canvas — funciona com áudio ou sem (timer interno)
+    useEffect(() => {
+      if (!sourceAsset) return;
 
-      if(!sourceAsset) return
-      if(!audioRef2.current) return
+      if (!isPlaying2) {
+        if (audioRef2.current && hasAudio2.current) {
+          audioRef2.current.pause();
+        }
+        return;
+      }
+
+      // Inicia o áudio se disponível
+      if (audioRef2.current && hasAudio2.current) {
+        audioRef2.current.play().catch(() => { hasAudio2.current = false; });
+      }
+
+      const TICK = 1000 / 10; // 10 fps de polling
+      const interval = setInterval(() => {
+        let time: number;
+
+        if (audioRef2.current && hasAudio2.current) {
+          time = audioRef2.current.currentTime;
+        } else {
+          internalTime2.current += TICK / 1000;
+          // Para no fim do asset
+          if (sourceDuration2.current > 0 && internalTime2.current >= sourceDuration2.current) {
+            internalTime2.current = sourceDuration2.current;
+            setCurrentTime2(internalTime2.current);
+            setIsPlaying2(false);
+            clearInterval(interval);
+            return;
+          }
+          time = internalTime2.current;
+        }
+
+        setCurrentTime2(time);
+        renderFrame2(time);
+      }, TICK);
+
+      return () => {
+        clearInterval(interval);
+        if (audioRef2.current && hasAudio2.current) {
+          audioRef2.current.pause();
+        }
+      };
+    }, [isPlaying2, sourceAsset]);
 
 
-      const audio = `${sourceAsset.name.split('.').slice(0, -1).join('.')}.mp3`
-      const path =  knowTypeByAssetName(sourceAsset.name) === 'video' ? `http://127.0.0.1:1234/${encodeURIComponent(`${currentProjectPath}/extracted_audios/${audio}`)}` :
-      `http://127.0.0.1:1234/${encodeURIComponent(`${currentProjectPath}/videos/${sourceAsset.name}`)}`
-
-
-
-      audioRef2.current.src = path
-            
-
-
-    }, [sourceAsset])
+    const togglePlay2 = () => {
+      setIsPlaying2(prev => !prev);
+    };
 
 
 
@@ -5406,29 +5436,38 @@ return (
     <div 
       className="relative h-3 bg-white/5 rounded-full cursor-pointer overflow-hidden"
       onClick={(e) => {
-        if (!audioRef2.current || !sourceAsset) return;
+        if (!sourceAsset) return;
+        const duration = sourceDuration2.current;
+        if (!duration || duration <= 0) return;
+
         const rect = e.currentTarget.getBoundingClientRect();
-        const percent = (e.clientX - rect.left) / rect.width;
-        const newTime = percent * (audioRef2.current.duration || 0);
-        
-        audioRef2.current.currentTime = newTime;
+        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const newTime = percent * duration;
+
+        // Atualiza o relógio correto
+        if (audioRef2.current && hasAudio2.current) {
+          audioRef2.current.currentTime = newTime;
+        } else {
+          internalTime2.current = newTime;
+        }
+
         setCurrentTime2(newTime);
-        renderFrame2(newTime); // Renderiza o frame estático ao clicar
+        renderFrame2(newTime);
       }}
     >
       {/* Marcador de Range (I -> O) */}
       <div 
         className="absolute h-full bg-indigo-500/30 border-x border-indigo-500/50"
         style={{
-          left: `${(inPoint / (audioRef2.current?.duration || 1)) * 100}%`,
-          width: `${((outPoint - inPoint) / (audioRef2.current?.duration || 1)) * 100}%`
+          left: `${(inPoint / (sourceDuration2.current || 1)) * 100}%`,
+          width: `${((outPoint - inPoint) / (sourceDuration2.current || 1)) * 100}%`
         }}
       />
 
       {/* Playhead */}
       <div 
         className="absolute h-full w-0.5 bg-white z-20"
-        style={{ left: `${(currentTime2 / (audioRef2.current?.duration || 1)) * 100}%` }}
+        style={{ left: `${(currentTime2 / (sourceDuration2.current || 1)) * 100}%` }}
       />
     </div>
 
@@ -5498,7 +5537,7 @@ return (
 
 
           {/* PREVIEW PLAYER */}
-          <section className="flex-1 bg-black flex flex-col items-center justify-center p-8 relative">
+          <section className="flex-1 bg-black flex flex-col items-center justify-center p-8 relative h-full overflow-hidden">
             
 
 
@@ -5506,16 +5545,24 @@ return (
 
               
                 <div 
-                  className="w-full max-w-4xl bg-[#050505] rounded-xl border border-zinc-800 flex items-center justify-center relative group cursor-pointer overflow-hidden shadow-2xl transition-all duration-500 ease-in-out"
+                  className="bg-[#050505] rounded-xl border border-zinc-800 flex items-center justify-center relative group cursor-pointer overflow-hidden shadow-2xl transition-all duration-500 ease-in-out"
                   style={{ 
-                    aspectRatio: `${projectConfig.width} / ${projectConfig.height}` 
+                    aspectRatio: `${projectConfig.width} / ${projectConfig.height}`,
+                    // Portrait: limita pela altura disponível da section (h-full)
+                    // Landscape/Square: limita pela largura (max-w de 896px)
+                    ...(projectConfig.height > projectConfig.width
+                      ? { height: '100%', maxHeight: '100%', width: 'auto' }
+                      : { width: '100%', maxWidth: '896px' }
+                    )
                   }}
                   onClick={togglePlay}
                 >
-                  {/* O Canvas agora preenche o contêiner que tem a proporção correta */}
 
                   <canvas 
                     ref={canvasRef}
+                    width={projectConfig.width}
+                    height={projectConfig.height}
+
                     onContextMenu={(e) => {
                       e.preventDefault();
                       handleCanvasClick(e); // Sua função de Hit Test que define o selectedClipIdRef

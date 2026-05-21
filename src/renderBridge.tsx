@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import * as Tone from 'tone';
+import { drawFrame as professionalDrawFrame } from "./Render/Render";
+
 
 
 export interface RenderEngineContext {
@@ -24,18 +26,15 @@ export interface RenderEngineContext {
 // Motor de preview (carregado dinamicamente do submódulo privado)
 // ---------------------------------------------------------------------------
 
+// No topo do renderBridge.tsx
+
+// E altere a sua função getDrawFrameFunction para:
 export async function getDrawFrameFunction() {
   try {
-    const module = await import("./engine_core/previewRender");
-    return module.drawFrame;
+    return professionalDrawFrame;
   } catch (e) {
-    console.warn("WannaCut: Motor Pro não encontrado. Usando renderização básica.");
-    return async (ctx: RenderEngineContext) => {
-      const { rendererRef, sceneRef, cameraRef } = ctx;
-      if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        rendererRef.current.render(sceneRef.current, cameraRef.current);
-      }
-    };
+    console.warn("Erro ao carregar motor principal.");
+    return async (ctx: any) => { /* fallback */ };
   }
 }
 

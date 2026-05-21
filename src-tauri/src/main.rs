@@ -30,9 +30,7 @@ use std::path::Path;
 
 
 use tauri_plugin_shell::ShellExt;
-use tauri::Manager;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 use std::io::Write;
 
@@ -249,28 +247,33 @@ async fn get_asset_dimensions(path: String) -> Result<Dimensions, String> {
 
     // --- LÓGICA PARA VÍDEOS (Via OpenCV) ---
     // OpenCV abre o arquivo e lê o cabeçalho via FFmpeg interno do sistema
-    let mut v_cap = videoio::VideoCapture::from_file(&path, videoio::CAP_ANY)
-        .map_err(|e| format!("OpenCV não conseguiu abrir o vídeo: {}", e))?;
+    // --- LÓGICA PARA VÍDEOS (Via FFmpeg) ---
+    let output = Command::new("ffprobe")
+        .args([
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0",
+            &path,
+        ])
+        .output()
+        .map_err(|e| format!("Erro ao executar ffprobe: {}", e))?;
 
-    let opened = videoio::VideoCapture::is_opened(&v_cap)
-        .map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<&str> = stdout.trim().split(',').collect();
 
-    if !opened {
-        return Err("Falha ao abrir stream de vídeo".to_string());
+    if parts.len() < 2 {
+        return Err("Não foi possível determinar as dimensões do vídeo".to_string());
     }
 
-    // CAP_PROP_FRAME_WIDTH e HEIGHT retornam as dimensões reais do vídeo
-    let width = v_cap.get(videoio::CAP_PROP_FRAME_WIDTH).map_err(|e| e.to_string())?;
-    let height = v_cap.get(videoio::CAP_PROP_FRAME_HEIGHT).map_err(|e| e.to_string())?;
+    let width: f64 = parts[0].parse().map_err(|e| format!("Erro ao parsear width: {}", e))?;
+    let height: f64 = parts[1].parse().map_err(|e| format!("Erro ao parsear height: {}", e))?;
 
     if width == 0.0 || height == 0.0 {
         return Err("Não foi possível determinar as dimensões do vídeo".to_string());
     }
 
-    Ok(Dimensions {
-        x: width,
-        y: height,
-    })
+    Ok(Dimensions { x: width, y: height })
 }
 
 #[tauri::command]
@@ -835,71 +838,60 @@ use tauri_plugin_shell::process::CommandEvent;
 
 
 #[tauri::command]
-async fn get_preview_frame(
-    app_handle: tauri::AppHandle,
-    data: serde_json::Value
-) -> Result<String, String> {
+async fn get_video_frame(path: String, time_ms: f64) -> Result<String, String> {
+    let time_secs = time_ms / 1000.0;
+    
+    // FFmpeg extrai o frame como JPEG para stdout
+    let output = Command::new("ffmpeg")
+        .args([
+            "-ss", &format!("{:.3}", time_secs),
+            "-i", &path,
+            "-frames:v", "1",
+            "-f", "image2",
+            "-vcodec", "mjpeg",
+            "pipe:1",
+        ])
+        .output()
+        .map_err(|e| format!("Erro ao executar ffmpeg: {}", e))?;
 
-    let mut input_json = data.to_string();
-    input_json.push('\n');
-
-    // ✅ FIX 2: PYTHONUNBUFFERED=1 garante que o stdout do Python não fica bufferizado
-    let (mut rx, mut child) = app_handle
-        .shell()
-        .sidecar("exporter")
-        .map_err(|e| e.to_string())?
-        .env("PYTHONUNBUFFERED", "1")   // <-- estava faltando aqui
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    // ✅ FIX 1: Escreve o JSON e fecha o stdin imediatamente
-    // Sem isso, o Python fica em readline() esperando mais dados
-    child.write(input_json.as_bytes()).map_err(|e| e.to_string())?;
-
-    let mut base64_result = String::new();
-    let mut stderr_log = String::new();
-
-    // ✅ FIX 3: Timeout de 30s para não travar a UI se o Python crashar
-    let timeout = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
-            while let Some(event) = rx.recv().await {
-                match event {
-                    CommandEvent::Stdout(bytes) => {
-                        let line = String::from_utf8_lossy(&bytes);
-                        if line.contains("FRAME_DATA:") {
-                            base64_result = line.replace("FRAME_DATA:", "").trim().to_string();
-                            let _ = child.kill();
-                            break;
-                        }
-                    }
-                    CommandEvent::Stderr(bytes) => {
-                        let msg = String::from_utf8_lossy(&bytes).to_string();
-                        println!("[Python Preview] {}", msg.trim());
-                        stderr_log.push_str(&msg);
-                    }
-                    CommandEvent::Terminated(_) => break,
-                    _ => {}
-                }
-            }
-        }
-    ).await;
-
-    if timeout.is_err() {
-        return Err("Timeout: o motor Python demorou mais de 30s para responder".into());
+    if output.stdout.is_empty() {
+        return Err("Unable to read the video frame".into());
     }
 
-    if base64_result.is_empty() {
-        return Err(format!(
-            "O motor Python não respondeu. Log de erro:\n{}",
-            if stderr_log.is_empty() { "(sem output no stderr)".into() } else { stderr_log }
-        ));
-    }
-
-    Ok(base64_result)
+    let b64 = general_purpose::STANDARD.encode(&output.stdout);
+    Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
 
+/// Retorna um frame de preview em resolução reduzida (thumbnail rápida).
+/// Útil para scrubbing na timeline sem sobrecarregar o processo.
+/// `width` define a largura máxima do preview (altura é proporcional).
+#[tauri::command]
+async fn get_preview_frame(path: String, time_ms: f64, width: Option<u32>) -> Result<String, String> {
+    let time_secs = time_ms / 1000.0;
+    let preview_width = width.unwrap_or(320);
+
+    let output = Command::new("ffmpeg")
+        .args([
+            "-ss", &format!("{:.3}", time_secs),
+            "-i", &path,
+            "-frames:v", "1",
+            "-vf", &format!("scale={}:-1", preview_width),
+            "-f", "image2",
+            "-vcodec", "mjpeg",
+            "-q:v", "5",
+            "pipe:1",
+        ])
+        .output()
+        .map_err(|e| format!("Erro ao executar ffmpeg: {}", e))?;
+
+    if output.stdout.is_empty() {
+        return Err("Unable to read the preview frame".into());
+    }
+
+    let b64 = general_purpose::STANDARD.encode(&output.stdout);
+    Ok(format!("data:image/jpeg;base64,{}", b64))
+}
 
 
 
@@ -1037,7 +1029,6 @@ async fn get_duration(path: String) -> Result<VideoMetadata, String> {
 
 
 
-use opencv::{prelude::*, videoio, core, imgcodecs};
 use base64::{engine::general_purpose, Engine as _};
 
 #[tauri::command]
@@ -1057,29 +1048,7 @@ async fn get_image_data(path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, b64))
 }
 
-#[tauri::command]
-async fn get_video_frame(path: String, time_ms: f64) -> Result<String, String> {
-    
-    
-    
-    let mut cam = videoio::VideoCapture::from_file(&path, videoio::CAP_ANY)
-        .map_err(|e| e.to_string())?;
-    
-    
-    // Move the video seek pointer to the desired millisecond
-    cam.set(videoio::CAP_PROP_POS_MSEC, time_ms).map_err(|e| e.to_string())?;
-    
-    let mut frame = core::Mat::default();
-    if cam.read(&mut frame).map_err(|e| e.to_string())? {
-        let mut buffer = core::Vector::<u8>::new();
-        imgcodecs::imencode(".jpg", &frame, &mut buffer, &core::Vector::default()).map_err(|e| e.to_string())?;
-        
-        let b64 = general_purpose::STANDARD.encode(buffer.as_slice());
-        Ok(format!("data:image/jpeg;base64,{}", b64))
-    } else {
-        Err("Unable to read the video frame".into())
-    }
-}
+
 
 
 #[tauri::command]
