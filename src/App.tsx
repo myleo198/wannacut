@@ -108,7 +108,8 @@ interface Project {
 interface Keyframe {
   id: string;
   time: number;  
-  value: number | Position | Rotation; 
+  value: number | Position | Rotation;
+  originalTime?: number
 }
 
 interface Position
@@ -1784,6 +1785,7 @@ useEffect(() => {
   } else {
     //if (requestRef.current) cancelAnimationFrame(requestRef.current);
     lastTimeRef.current = null;
+    
   }
   return () => {
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
@@ -1791,6 +1793,55 @@ useEffect(() => {
 }, [isPlaying]);
 
 
+
+
+
+const seekToNearestCut = (direction: 1 | -1) => {
+  const currentTime = currentTimeRef.current;
+  let targetTime: number | null = null;
+
+  // 1. Mapeia todos os pontos de início e fim de todos os clipes
+  const cutPoints: number[] = [];
+  clips.forEach(clip => {
+    cutPoints.push(clip.start);
+    cutPoints.push(clip.start + clip.duration);
+  });
+
+  // Remove duplicatas (ex: se o fim de um clipe encosta exatamente no início de outro)
+  // e remove pontos inválidos ou o próprio tempo atual exato
+  const uniqueCuts = Array.from(new Set(cutPoints)).filter(cut => cut !== currentTime);
+
+  if (direction === -1) {
+    // --- IR PARA TRÁS (Procura o maior ponto que seja MENOR que o tempo atual) ---
+    const pastCuts = uniqueCuts.filter(cut => cut < currentTime);
+    
+    if (pastCuts.length > 0) {
+      // Como queremos o mais próximo de quem está atrás, pegamos o Máximo (Math.max)
+      targetTime = Math.max(...pastCuts);
+    } else {
+      // Se não houver nenhum corte antes, volta para o início da timeline (0)
+      targetTime = 0;
+    }
+  } else if (direction === 1) {
+    // --- IR PARA FRENTE (Procura o menor ponto que seja MAIOR que o tempo atual) ---
+    const futureCuts = uniqueCuts.filter(cut => cut > currentTime);
+    
+    if (futureCuts.length > 0) {
+      // Como queremos o mais próximo de quem está à frente, pegamos o Mínimo (Math.min)
+      targetTime = Math.min(...futureCuts);
+    }
+    // Opcional: se não houver nada à frente, você pode decidir se mantém parado ou faz outra lógica
+  }
+
+  // 2. Se encontrou um destino válido, atualiza a referência
+  if (targetTime !== null) {
+    //currentTimeRef.current = targetTime;
+    seekTo(targetTime)
+    
+    
+    //console.log(`Seeked ${direction === 1 ? 'forward' : 'backward'} to: ${targetTime}`);
+  }
+};
 
 
 
@@ -2760,6 +2811,33 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
         }
 
 
+        if (e.ctrlKey) {
+      
+        // Ctrl + > (Tecla de Ponto '.')
+        if (e.code === 'Period') {
+          e.preventDefault(); // Evita comportamentos padrão do navegador/WebView
+          seekToNearestCut(1);
+        }
+        
+        // Ctrl + < (Tecla de Vírgula ',')
+        else if (e.code === 'Comma') {
+          e.preventDefault();
+          seekToNearestCut(-1);
+        }
+      }
+
+
+       if (e.code === 'Period') {
+          e.preventDefault(); // Evita comportamentos padrão do navegador/WebView
+          seekTo(currentTimeRef.current + 0.01)
+        }
+        
+        // Ctrl + < (Tecla de Vírgula ',')
+        else if (e.code === 'Comma') {
+          e.preventDefault();
+          seekTo(currentTimeRef.current - 0.01)
+          
+        }
 
         if(!isMouseOverSource && e.code === 'Space')
         {
@@ -2867,7 +2945,7 @@ const seekTo = (newTime: number) => {
      */
 
 const handleSplit = () => {
-  const playheadTime = playheadPos / pixelsPerSecond;
+  const playheadTime = currentTimeRef.current ? currentTimeRef.current : 0;
 
 
   //console.log('playheadtime', playheadTime)
@@ -4038,6 +4116,39 @@ const handleFadeDrag = (e: React.MouseEvent, clipId: string, type: 'in' | 'out',
 };
 
 
+
+const openProjectEarly = async (parsed: JSON) => {
+
+
+  
+  
+  setClips([]);
+  setAssets([]);
+  setTracks([]);
+  
+  try
+  {
+    
+    
+    setClips(parsed.clips || []);
+    setAssets(parsed.assets || []);
+    setTracks(parsed.tracks || []);
+    
+ 
+    
+    // Now allow saving
+    setIsProjectLoaded(true); 
+    setIsSetupOpen(false);
+    loadSystemFonts()
+  } catch (err) {
+    console.log("No previous project file found, starting fresh.");
+    setIsProjectLoaded(true); // Allow saving for new projects too
+    setIsSetupOpen(false);
+  }
+};
+
+
+
 const openProject = async (path: string) => {
 
 
@@ -4198,7 +4309,7 @@ const openProject = async (path: string) => {
 
   //make function split and selection
  const handleMassSplitAndSelect = (direction: 'left' | 'right') => {
-    const playheadTime = Math.floor(playheadPos / pixelsPerSecond);
+    const playheadTime =  currentTimeRef.current //Math.floor(playheadPos / pixelsPerSecond);
 
     
     saveHistory(clips, assets);
@@ -4493,349 +4604,10 @@ const handleImportFile = async () => {
 
 // sync anothers keyframes to the speed keyframes
 
-const syncKeyframesToSpeedCurve = (clip: Clip) => {
-  if (!clip.keyframes?.speed) return;
-
-  // --- CASO: KEYFRAMES DE SPEED FORAM EXCLUÍDOS ---
-  if (clip.keyframes.speed.length === 0) {
-    setClips((prevClips) =>
-      prevClips.map((c) => {
-        if (c.id === clip.id) {
-          const updatedKfs = { ...c.keyframes };
-          const typesToRemap: (keyof NonNullable<Clip['keyframes']>)[] = ['volume', 'opacity', 'rotation3d'];
-
-          typesToRemap.forEach((type) => {
-            if (updatedKfs[type]) {
-              updatedKfs[type] = updatedKfs[type]!.map((kf) => {
-                /**
-                 * LÓGICA DE RESET:
-                 * Se a velocidade agora é constante (1.0x), o tempo na timeline
-                 * deve ser exatamente o "Asset Time" que o keyframe representava.
-                 * Usamos a proporção baseada na duração que o clipe tinha antes de resetar.
-                 */
-                const ratio = kf.time / (c.duration || 1);
-                const resetTime = ratio * (c.originalduration || c.maxduration || c.duration);
-
-                return {
-                  ...kf,
-                  time: resetTime
-                };
-              });
-            }
-          });
-
-          return { 
-            ...c, 
-            duration: c.originalduration || c.maxduration || c.duration,
-            keyframes: updatedKfs 
-          };
-        }
-        return c;
-      })
-    );
-    return;
-  }
-
-  const speedKfs = [...clip.keyframes.speed].sort((a, b) => a.time - b.time);
-
-  // Esta lógica converte o "Tempo do Arquivo Original" para "Tempo na Timeline"
-  const mapAssetTimeToTimeline = (targetAssetTime: number): number => {
-    let currentAssetTime = 0;
-    let currentTimelineTime = 0;
-
-    for (let i = 0; i < speedKfs.length - 1; i++) {
-      const start = speedKfs[i];
-      const end = speedKfs[i + 1];
-      const segmentTimelineDuration = end.time - start.time;
-      const avgSpeed = (start.value + end.value) / 2;
-      const segmentAssetDuration = segmentTimelineDuration * avgSpeed;
-
-      if (currentAssetTime + segmentAssetDuration >= targetAssetTime) {
-        const remainingAssetTime = targetAssetTime - currentAssetTime;
-        return currentTimelineTime + (remainingAssetTime / avgSpeed);
-      }
-      currentAssetTime += segmentAssetDuration;
-      currentTimelineTime += segmentTimelineDuration;
-    }
-    const lastSpeed = speedKfs[speedKfs.length - 1].value;
-    return currentTimelineTime + (targetAssetTime - currentAssetTime) / lastSpeed;
-  };
-
-  setClips((prevClips) =>
-    prevClips.map((c) => {
-      if (c.id === clip.id) {
-        const updatedKfs = { ...c.keyframes };
-        const typesToRemap: (keyof NonNullable<Clip['keyframes']>)[] = ['volume', 'opacity', 'rotation3d'];
-
-        typesToRemap.forEach((type) => {
-          if (updatedKfs[type]) {
-            // ATENÇÃO: Se você tiver c.originalKeyframes[type], use ele aqui
-            // para evitar erro cumulativo de ponto flutuante.
-            updatedKfs[type] = updatedKfs[type]!.map((kf) => ({
-              ...kf,
-              // O kf.time aqui é tratado como a posição fixa no arquivo original
-              time: mapAssetTimeToTimeline(kf.time), 
-            }));
-          }
-        });
-
-        return { ...c, keyframes: updatedKfs };
-      }
-      return c;
-    })
-  );
-};
-
-
-
-const updateClipDurationBySpeed = (clip: Clip) => {
-  if (!clip.keyframes?.speed || clip.keyframes.speed.length === 0) {
-    
-    setClips((prev) =>
-      prev.map((c) => (c.id === clip.id ? { ...c, duration: c.originalduration || c.maxduration || 10 } : c))
-    );
-    return;
-  }
-
-  const speedKfs = [...clip.keyframes.speed].sort((a, b) => a.time - b.time);
-  
-  let totalTimelineDuration = 0;
-  let remainingAssetMaterial = clip.originalduration || clip.maxduration; 
-  let lastSpeed = speedKfs[0].value;
-
-  for (let i = 0; i < speedKfs.length - 1; i++) {
-    const start = speedKfs[i];
-    const end = speedKfs[i + 1];
-
-    const segmentTimelineDuration = end.time - start.time;
-    const avgSpeed = (start.value + end.value) / 2;
-    const assetConsumedInSegment = segmentTimelineDuration * avgSpeed;
-
-    if (remainingAssetMaterial <= assetConsumedInSegment) {
-      totalTimelineDuration += remainingAssetMaterial / avgSpeed;
-      remainingAssetMaterial = 0;
-      break;
-    }
-
-    remainingAssetMaterial -= assetConsumedInSegment;
-    totalTimelineDuration += segmentTimelineDuration;
-    lastSpeed = end.value;
-  }
-
-  if (remainingAssetMaterial > 0) {
-    totalTimelineDuration += remainingAssetMaterial / lastSpeed;
-  }
-
-  setClips((prev) =>
-    prev.map((c) => (c.id === clip.id ? { ...c, duration: totalTimelineDuration } : c))
-  );
-};
 
 
 
 
-const relocateSpeedKeyframes = (clip: Clip) => {
-  if (!clip.keyframes?.speed) return;
-
-  // --- CASO: KEYFRAMES DE SPEED FORAM EXCLUÍDOS ---
-  if (clip.keyframes.speed.length === 0) {
-    setClips((prevClips) =>
-      prevClips.map((c) => {
-        if (c.id === clip.id) {
-          const updatedKfs = { ...c.keyframes };
-          const typesToRemap: (keyof NonNullable<Clip['keyframes']>)[] = ['speed'];
-
-          typesToRemap.forEach((type) => {
-            if (updatedKfs[type]) {
-              updatedKfs[type] = updatedKfs[type]!.map((kf) => {
-                /**
-                 * LÓGICA DE RESET:
-                 * Se a velocidade agora é constante (1.0x), o tempo na timeline
-                 * deve ser exatamente o "Asset Time" que o keyframe representava.
-                 * Usamos a proporção baseada na duração que o clipe tinha antes de resetar.
-                 */
-                const ratio = kf.time / (c.duration || 1);
-                const resetTime = ratio * (c.originalduration || c.maxduration || c.duration);
-
-                return {
-                  ...kf,
-                  time: resetTime
-                };
-              });
-            }
-          });
-
-          return { 
-            ...c, 
-            duration: c.originalduration || c.maxduration || c.duration,
-            keyframes: updatedKfs 
-          };
-        }
-        return c;
-      })
-    );
-    return;
-  }
-
-  const speedKfs = [...clip.keyframes.speed].sort((a, b) => a.time - b.time);
-
-  // Esta lógica converte o "Tempo do Arquivo Original" para "Tempo na Timeline"
-  const mapAssetTimeToTimeline = (targetAssetTime: number): number => {
-    let currentAssetTime = 0;
-    let currentTimelineTime = 0;
-
-    for (let i = 0; i < speedKfs.length - 1; i++) {
-      const start = speedKfs[i];
-      const end = speedKfs[i + 1];
-      const segmentTimelineDuration = end.time - start.time;
-      const avgSpeed = (start.value + end.value) / 2;
-      const segmentAssetDuration = segmentTimelineDuration * avgSpeed;
-
-      if (currentAssetTime + segmentAssetDuration >= targetAssetTime) {
-        const remainingAssetTime = targetAssetTime - currentAssetTime;
-        return currentTimelineTime + (remainingAssetTime / avgSpeed);
-      }
-      currentAssetTime += segmentAssetDuration;
-      currentTimelineTime += segmentTimelineDuration;
-    }
-    const lastSpeed = speedKfs[speedKfs.length - 1].value;
-    return currentTimelineTime + (targetAssetTime - currentAssetTime) / lastSpeed;
-  };
-
-  setClips((prevClips) =>
-    prevClips.map((c) => {
-      if (c.id === clip.id) {
-        const updatedKfs = { ...c.keyframes };
-        const typesToRemap: (keyof NonNullable<Clip['keyframes']>)[] = ['volume', 'opacity', 'rotation3d'];
-
-        typesToRemap.forEach((type) => {
-          if (updatedKfs[type]) {
-            // ATENÇÃO: Se você tiver c.originalKeyframes[type], use ele aqui
-            // para evitar erro cumulativo de ponto flutuante.
-            updatedKfs[type] = updatedKfs[type]!.map((kf) => ({
-              ...kf,
-              // O kf.time aqui é tratado como a posição fixa no arquivo original
-              time: mapAssetTimeToTimeline(kf.time), 
-            }));
-          }
-        });
-
-        return { ...c, keyframes: updatedKfs };
-      }
-      return c;
-    })
-  );
-};
-
-
-
-
-const relocateSpeedKeyframes_old = (clip: Clip) => {
-  if (!clip.keyframes?.speed || clip.keyframes.speed.length === 0) return;
-
-  const speedKfs = [...clip.keyframes.speed].sort((a, b) => a.time - b.time);
-
-  // 1. Função para converter tempo da Timeline -> Asset (O quanto de vídeo já "passou")
-  const getAssetTimeFromTimeline = (tTime: number, kfs: Keyframe[]): number => {
-    let aTime = 0;
-    let lastT = 0;
-    let lastS = kfs[0].value;
-
-    for (let i = 0; i < kfs.length; i++) {
-      const kf = kfs[i];
-      if (tTime > kf.time) {
-        const dt = kf.time - lastT;
-        const avgS = (lastS + kf.value) / 2;
-        aTime += dt * avgS;
-        lastT = kf.time;
-        lastS = kf.value;
-      } else {
-        const dt = tTime - lastT;
-        const dist = kf.time - lastT || 1;
-        const currentS = lastS + (dt / dist) * (kf.value - lastS);
-        aTime += dt * ((lastS + currentS) / 2);
-        return aTime;
-      }
-    }
-    return aTime + (tTime - lastT) * lastS;
-  };
-
-  // 2. Função para converter Asset -> Nova Timeline (Onde o ponto deve estacionar)
-  const getTimelineFromAssetTime = (aTime: number, kfs: Keyframe[]): number => {
-    let currentA = 0;
-    let currentT = 0;
-    for (let i = 0; i < kfs.length - 1; i++) {
-      const start = kfs[i];
-      const end = kfs[i + 1];
-      const dt = end.time - start.time;
-      const avgS = (start.value + end.value) / 2;
-      const da = dt * avgS;
-
-      if (currentA + da >= aTime) {
-        return currentT + (aTime - currentA) / avgS;
-      }
-      currentA += da;
-      currentT += dt;
-    }
-    const lastS = kfs[kfs.length - 1].value;
-    return currentT + (aTime - currentA) / lastS;
-  };
-
-  setClips((prevClips) =>
-    prevClips.map((c) => {
-      if (c.id === clip.id) {
-        const updatedKfs = { ...c.keyframes };
-        const types: (keyof NonNullable<Clip['keyframes']>)[] = ['speed'];
-
-        types.forEach((type) => {
-          if (updatedKfs[type]) {
-            updatedKfs[type] = updatedKfs[type]!.map((kf) => {
-              // PASSO CRUCIAL:
-              // Em vez de usar ratio (estático), usamos a integral.
-              // "Em qual frame do vídeo original este keyframe estava?"
-              const assetTime = getAssetTimeFromTimeline(kf.time, speedKfs);
-              
-              // "Com a nova curva, onde esse frame original cai na timeline?"
-              const newTime = getTimelineFromAssetTime(assetTime, speedKfs);
-
-              // Evita micro-loops de atualização do React
-              if (Math.abs(kf.time - newTime) < 0.001) return kf;
-
-              return { ...kf, time: newTime };
-            });
-          }
-        });
-
-        return { ...c, keyframes: updatedKfs };
-      }
-      return c;
-    })
-  );
-};
-
-
-
-const isSyncingRef = useRef(false);
-
-const handleSpeedKeyframeChange = (clip: Clip) => {
-  // Se já estamos sincronizando, ignora para não entrar em loop
-  if (isSyncingRef.current) return;
-
-  isSyncingRef.current = true;
-
-  try {
-    // A ordem correta para garantir a consistência
-    updateClipDurationBySpeed(clip);
-    syncKeyframesToSpeedCurve(clip);
-    relocateSpeedKeyframes(clip);
-  } finally {
-    // Usa um pequeno delay para garantir que o ciclo de renderização 
-    // do React processou as mudanças antes de liberar a trava
-    setTimeout(() => {
-      isSyncingRef.current = false;
-    }, 100);
-  }
-};
 
 useEffect(() => {
   if (selectedClipIds.length !== 1) return;
@@ -4843,7 +4615,7 @@ useEffect(() => {
   const selectedClip = clips.find(c => c.id === selectedClipIds[0]);
   if (!selectedClip) return;
 
-  handleSpeedKeyframeChange(selectedClip);
+  
 
 }, [JSON.stringify(clips.find(c => c.id === selectedClipIds[0])?.keyframes?.speed)]);
 
@@ -5141,8 +4913,7 @@ const handleKeyframeDrag = (
       };
 
      
-      if( view == 'speed')
-          handleSpeedKeyframeChange(c)
+     
 
 
       return {
@@ -5662,14 +5433,14 @@ return (
 
             {/* PLAYER CONTROLS */}
             <div className="flex items-center gap-8 mt-6">
-              <button className="text-zinc-600 hover:text-white transition-colors"><SkipBack size={24} fill="currentColor"/></button>
+              <button onClick={() => {seekToNearestCut(-1)}} className="text-zinc-600 hover:text-white transition-colors"><SkipBack size={24} fill="currentColor"/></button>
               <button 
                 onClick={togglePlay}
                 className="w-14 h-14 bg-white rounded-full flex items-center justify-center text-black hover:scale-110 active:scale-95 transition-all shadow-xl shadow-white/5"
               >
                 {isPlaying ? <Pause size={28} fill="black" /> : <Play size={28} fill="black" className="ml-1" />}
               </button>
-              <button className="text-zinc-600 hover:text-white transition-colors"><SkipForward size={24} fill="currentColor"/></button>
+              <button onClick={() => {seekToNearestCut(1)}} className="text-zinc-600 hover:text-white transition-colors"><SkipForward size={24} fill="currentColor"/></button>
             </div>
           </section>
 
@@ -5801,6 +5572,9 @@ return (
             onMouseMove={handleTimelineMouseMove}
             onMouseUp={handleTimelineMouseUp}
             onMouseLeave={handleTimelineMouseUp}
+
+
+
     className="flex flex-col p-2 gap-1.5 overflow-x-auto custom-scrollbar relative"
   >
 
@@ -5875,7 +5649,9 @@ return (
       <div key={track.id} className="flex gap-2 group">
         
         {/* ASIDE: Icons Track and id */}
-        <div  ref={asidetrack} className="w-48 shrink-0 bg-zinc-900/40 border border-zinc-800/40 rounded-md flex items-center px-3 gap-3">
+        <div  ref={asidetrack} className="w-48 shrink-0 bg-zinc-900/40 border border-zinc-800/40 rounded-md flex items-center px-3 gap-3"
+        
+        >
           <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center text-zinc-400 group-hover:text-white transition-colors">
             {track.type === 'audio' && <Music size={14} />}
             {track.type === 'video' && <Play size={14} fill="currentColor" />}
@@ -5945,6 +5721,21 @@ return (
         
           }
           style={{ height: '64px' }}
+
+
+           onClick ={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            //const scrollLeft = timelineContainerRef.current?.scrollLeft || 0;
+            const newPos = e.clientX   - rect.left  - (pixelsPerSecond/20); //calibration
+            currentTimeRef.current = playheadPos/pixelsPerSecond
+            seekTo(currentTimeRef.current);
+            setPlayheadPos(newPos);
+            
+
+        
+        
+        }}
+         
 
           
 
@@ -6670,6 +6461,21 @@ return (
     onSaveProject={handleSaveSettings}
     isProjectLoaded = {isProjectLoaded}
     showNotify = {showNotify}
+    currentProjectPath={currentProjectPath ? currentProjectPath : null} // Estado/String que guarda o path atual do projeto
+    onLoadHistoryVersion={(projectDataJson) => {
+    try {
+      const parsedData = JSON.parse(projectDataJson);
+      
+      // 1. Atualize o estado do seu projeto (Timeline, Clipes, etc.)
+      openProjectEarly(parsedData); 
+      
+     
+      showNotify("Timeline successfully rolled back in history!", "success");
+    } catch (e) {
+      console.error("Error parsing history project json:", e);
+      showNotify("Error parsing backup data package.", "error");
+    }
+  }}
    
   />
 

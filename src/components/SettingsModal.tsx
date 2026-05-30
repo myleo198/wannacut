@@ -30,6 +30,9 @@ interface Props {
   onSaveProject: (settings: ProjectSettings) => void;
   isProjectLoaded: boolean;
   showNotify: (message: string, type: 'success' | 'error') => void;
+  // Novas propriedades necessárias:
+  currentProjectPath: string;
+  onLoadHistoryVersion: (projectDataJson: string) => void;
 }
 
 export const SettingsModal: React.FC<Props> = ({ 
@@ -38,10 +41,14 @@ export const SettingsModal: React.FC<Props> = ({
   currentProjectSettings, 
   onSaveProject,
   isProjectLoaded,
-  showNotify 
+  showNotify,
+  currentProjectPath,
+  onLoadHistoryVersion 
 }) => {
   // Ajuste: Se não houver projeto, a aba inicial DEVE ser' (System)
   const [activeTab, setActiveTab] = useState(isProjectLoaded ? 'project' : 'wannacut');
+  // Estado para controlar qual arquivo está aguardando confirmação de restauração
+  const [pendingRestoreFile, setPendingRestoreFile] = useState<string | null>(null);
   
   const [projSettings, setProjSettings] = useState<ProjectSettings>(currentProjectSettings);
   const [wannacutSettings, setwannacutSettings] = useState<wannacutSettings>({
@@ -50,6 +57,76 @@ export const SettingsModal: React.FC<Props> = ({
     shortcuts: ''
   });
   const [detectedGpus, setDetectedGpus] = useState<string[]>([]);
+
+
+    // Dentro do componente SettingsModal, adicione estes estados e funções:
+
+  const [historyFiles, setHistoryFiles] = useState<string[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+
+  // Carrega o histórico de arquivos sempre que a aba mudar para 'history'
+  useEffect(() => {
+    if (isOpen && activeTab === 'history' && currentProjectPath) {
+      loadHistoryFiles();
+    }
+  }, [activeTab, isOpen]);
+
+  const loadHistoryFiles = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const files = await invoke('list_project_files', { projectPath: currentProjectPath }) as string[];
+      // O Rust já ordena os arquivos de forma crescente. 
+      // Invertemos (.reverse()) para exibir o arquivo mais recente no topo da lista.
+      setHistoryFiles(files.reverse());
+    } catch (err) {
+      console.error("Failed to load project history:", err);
+      showNotify("Error loading history logs", 'error');
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+
+  // 1. Chamado ao clicar no botão "Restore Version" da lista
+const handleRestoreVersion = (fileName: string) => {
+  setPendingRestoreFile(fileName); // Abre o modal de confirmação em React
+};
+
+// 2. Chamado quando o usuário clica em "Confirm" no modal em React
+const executeRestore = async () => {
+  if (!pendingRestoreFile) return;
+
+  try {
+    const jsonContent = await invoke('read_specific_file', { 
+      projectPath: currentProjectPath, 
+      fileName: pendingRestoreFile 
+    }) as string;
+
+    onLoadHistoryVersion(jsonContent);
+    showNotify("Project version restored successfully!", 'success');
+    setPendingRestoreFile(null);
+    onClose(); // Fecha o SettingsModal principal
+  } catch (err) {
+    console.error("Failed to read history file:", err);
+    showNotify("Failed to restore this version.", 'error');
+    setPendingRestoreFile(null);
+  }
+};
+
+  // Função auxiliar para formatar o nome do arquivo "main1716123456789.project" para algo legível
+  const formatHistoryName = (fileName: string) => {
+    // Regex extrai apenas os números contidos entre 'main' e '.project'
+    const timestampMatch = fileName.match(/main(\d+)\.project/);
+    if (!timestampMatch) return { dateStr: fileName, isAuto: false };
+
+    const timestamp = parseInt(timestampMatch[1], 10);
+    const date = new Date(timestamp);
+
+    return {
+      dateStr: date.toLocaleDateString() + ' - ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      isAuto: true
+    };
+  };
 
   const presets = [
     { label: '4K Ultra HD', w: 3840, h: 2160 },
@@ -361,6 +438,55 @@ export const SettingsModal: React.FC<Props> = ({
                 </section>
               </div>
             )}
+
+
+            {activeTab === 'history' && isProjectLoaded && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex items-center gap-2 text-purple-500/70">
+                    <History size={14} />
+                    <h3 className="text-[9px] font-black uppercase tracking-widest">Backup History Logs</h3>
+                  </div>
+                  
+                  <p className="text-zinc-500 text-[10px] italic leading-relaxed">
+                    Select a historical auto-save version below to restore the timeline and configurations to that specific state.
+                  </p>
+
+                  {isLoadingHistory ? (
+                    <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">
+                      Reading backup filesystem...
+                    </div>
+                  ) : historyFiles.length === 0 ? (
+                    <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest border border-dashed border-white/5 rounded-lg bg-white/1">
+                      No history files found for this project.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1 custom-scrollbar">
+                      {historyFiles.map((file) => {
+                        const { dateStr } = formatHistoryName(file);
+                        return (
+                          <button
+                            key={file}
+                            onClick={() => handleRestoreVersion(file)}
+                            className="w-full text-left px-4 py-3 rounded border border-white/5 bg-white/2 hover:bg-purple-600/10 hover:border-purple-500/30 group flex justify-between items-center transition-all"
+                          >
+                            <div className="space-y-1">
+                              <span className="font-bold text-[10px] tracking-wide text-zinc-300 group-hover:text-purple-400 transition-colors">
+                                {dateStr}
+                              </span>
+                              <div className="text-[8px] font-mono text-zinc-600 group-hover:text-zinc-500 truncate max-w-[280px]">
+                                {file}
+                              </div>
+                            </div>
+                            <span className="text-[8px] font-black uppercase tracking-widest bg-zinc-900 border border-white/10 text-zinc-500 group-hover:border-purple-500/40 group-hover:text-purple-400 px-2 py-1 rounded transition-all">
+                              Restore Version
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
           </div>
 
           <footer className="p-6 border-t border-white/5 flex flex-col gap-2">
@@ -383,6 +509,51 @@ export const SettingsModal: React.FC<Props> = ({
           </footer>
         </main>
       </motion.div>
+
+        {/* --- SUB-MODAL DE CONFIRMAÇÃO EM REACT --- */}
+      <AnimatePresence>
+        {pendingRestoreFile && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#0d0d11] border border-red-500/20 w-full max-w-md rounded-lg p-6 space-y-6 shadow-2xl shadow-black"
+            >
+              <div className="flex items-center gap-3 text-red-400">
+                <AlertTriangle size={20} className="shrink-0 animate-pulse" />
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">
+                  Confirm Version Restore
+                </h3>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-zinc-400 text-[10px] leading-relaxed">
+                  Are you sure you want to roll back the project to this state? Any unsaved changes in your current timeline session will be permanently lost.
+                </p>
+                <div className="bg-black/40 border border-white/5 rounded p-2 text-[9px] font-mono text-zinc-500 truncate">
+                  Target: {pendingRestoreFile}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={executeRestore}
+                  className="flex-1 py-2 bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 text-red-400 text-[9px] font-black uppercase tracking-widest rounded transition-all"
+                >
+                  Confirm Restore
+                </button>
+                <button
+                  onClick={() => setPendingRestoreFile(null)}
+                  className="flex-1 py-2 bg-zinc-900 hover:bg-zinc-800 border border-white/5 text-zinc-400 text-[9px] font-black uppercase tracking-widest rounded transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

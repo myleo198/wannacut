@@ -94,20 +94,28 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
           </div>
           
 
-          {isText && <PropertyRow label="Text" keyframable={false}>
-                  <div className="flex items-center gap-2">
-                      <input 
-                        type="text"
-                        className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
-                        value={clip.name}
-                        onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, name: e.target.value } : c))}
-                      />
-                    
-                  </div>
-                  
-                </PropertyRow>
+        {isText && (
+  <PropertyRow label="Text" keyframable={false}>
+    <div className="flex items-center gap-2 w-full">
+      <textarea 
+        className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono min-h-[50px] resize-y custom-scrollbar leading-relaxed"
+        value={clip.name}
+        onChange={(e) => 
+          setClips(prev => 
+            prev.map(c => c.id === selectedClip.id ? { ...c, name: e.target.value } : c)
+          )
+        }
+        onKeyDown={(e) => {
+          // Garante que o Enter insira a quebra de linha normal e pare qualquer comportamento do Tauri
+          if (e.key === 'Enter') {
+            e.stopPropagation(); 
           }
-
+        }}
+        rows={3}
+      />
+    </div>
+  </PropertyRow>
+)}
           {(isVideo || isText || isImage) && (
             <>
 
@@ -122,7 +130,18 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                   min="-4000"
                   max="4000"
                   value={posXState.localValue}
-                  onChange={(e) => posXState.setLocalValue(parseFloat(e.target.value))}
+                 onChange={(e) => {
+                      const val = e.target.value;
+                      // Se for apenas o sinal de menos ou estiver vazio, permite atualizar o estado como string
+                      if (val === '-' || val === '') {
+                        posXState.setLocalValue(val as any); // Força a string temporária para não quebrar a tipagem
+                      } else {
+                        const parsed = parseFloat(val);
+                        if (!isNaN(parsed)) {
+                          posXState.setLocalValue(parsed);
+                        }
+                      }
+                    }}
                   onBlur={posXState.handleBlurOrEnter}
                   onKeyDown={(e) => e.key === 'Enter' && posXState.handleBlurOrEnter(e)}
                   className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all" 
@@ -135,7 +154,18 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                   min="-4000"
                   max="4000"
                   value={posYState.localValue}
-                  onChange={(e) => posYState.setLocalValue(parseFloat(e.target.value))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Se for apenas o sinal de menos ou estiver vazio, permite atualizar o estado como string
+                    if (val === '-' || val === '') {
+                      posYState.setLocalValue(val as any); // Força a string temporária para não quebrar a tipagem
+                    } else {
+                      const parsed = parseFloat(val);
+                      if (!isNaN(parsed)) {
+                        posYState.setLocalValue(parsed);
+                      }
+                    }
+                  }}
                   onBlur={posYState.handleBlurOrEnter}
                   onKeyDown={(e) => e.key === 'Enter' && posXState.handleBlurOrEnter(e)}
                   
@@ -476,22 +506,47 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
           {(isVideo || isText || isImage) && 
           
           (<div className="grid grid-cols-2 gap-2 mt-2">
-            <PropertyRow label="Rotation" activeColor={activeHex}>
-              <input type="number" className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none"
-                value={Math.round(rot2dState.localValue)}
-                onChange={(e) => rot2dState.setLocalValue(parseFloat(e.target.value))}
-                onBlur={rot2dState.handleBlurOrEnter}
-                onKeyDown={(e) => e.key === 'Enter' && rot2dState.handleBlurOrEnter(e)}
-              />
-            </PropertyRow>
-            <PropertyRow label="3D Rot" activeColor={activeHex}>
-              <input type="number" className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none"
-                value={Math.round(rot3dState.localValue)}
-                onChange={(e) => rot3dState.setLocalValue(parseFloat(e.target.value))}
-                onBlur={rot3dState.handleBlurOrEnter}
-                onKeyDown={(e) => e.key === 'Enter' && rot3dState.handleBlurOrEnter(e)}
-              />
-            </PropertyRow>
+              <PropertyRow label="Rotation" activeColor={activeHex}>
+                  <input 
+                    type="number" 
+                    className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all w-full"
+                    value={rot2dState.localValue} // Removido o Math.round daqui para permitir a string "-"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '-' || val === '') {
+                        rot2dState.setLocalValue(val as any); // Permite o sinal de menos temporário
+                      } else {
+                        const parsed = parseFloat(val);
+                        if (!isNaN(parsed)) {
+                          rot2dState.setLocalValue(parsed);
+                        }
+                      }
+                    }}
+                    onBlur={rot2dState.handleBlurOrEnter}
+                    onKeyDown={(e) => e.key === 'Enter' && rot2dState.handleBlurOrEnter(e)}
+                  />
+                </PropertyRow>
+
+                <PropertyRow label="3D Rot" activeColor={activeHex}>
+                  <input 
+                    type="number" 
+                    className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all w-full"
+                    value={rot3dState.localValue} // Removido o Math.round daqui também
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '-' || val === '') {
+                        rot3dState.setLocalValue(val as any); // Permite o sinal de menos temporário
+                      } else {
+                        const parsed = parseFloat(val);
+                        if (!isNaN(parsed)) {
+                          rot3dState.setLocalValue(parsed);
+                        }
+                      }
+                    }}
+                    onBlur={rot3dState.handleBlurOrEnter}
+                    onKeyDown={(e) => e.key === 'Enter' && rot3dState.handleBlurOrEnter(e)}
+                  />
+                </PropertyRow>
           </div>)
           
           

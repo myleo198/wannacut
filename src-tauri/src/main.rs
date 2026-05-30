@@ -927,49 +927,83 @@ fn list_assets(project_path: String) -> Result<Vec<String>, String> {
 
 
 
+use std::time::SystemTime;
+
+// Certifique-se de que sua Struct Project tenha um campo para ordenação (não precisa ir para o frontend se não quiser)
+// Mas para o Rust ordenar, precisamos rastrear essa data temporariamente.
+struct ProjectWithTime {
+    project: Project,
+    modified_time: SystemTime,
+}
+
+
 #[tauri::command]
 fn list_projects(root_path: String) -> Result<Vec<Project>, String> {
-    let mut projects = Vec::new();
+    let mut projects_with_time = Vec::new();
     let paths = fs::read_dir(root_path).map_err(|e| e.to_string())?;
 
-    for path in paths {
-        if let Ok(entry) = path {
-            let project_path = entry.path();
-            
-            if project_path.is_dir() {
-                let mut latest_thumbnail = None;
-                let thumb_dir = project_path.join("thumbnails");
+    for path in paths.flatten() {
+        let project_path = path.path();
+        
+        if project_path.is_dir() {
+            // Data padrão: a data de modificação da própria pasta do projeto
+            let mut project_latest_time = path.metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
 
-                // Tenta ler a pasta de thumbnails
-                if let Ok(thumb_entries) = fs::read_dir(thumb_dir) {
-                    let mut latest_time = std::time::SystemTime::UNIX_EPOCH;
+            let mut latest_thumbnail = None;
+            let thumb_dir = project_path.join("thumbnails");
 
-                    for thumb_entry in thumb_entries.flatten() {
-                        let p = thumb_entry.path();
-                        // Verifica se é um arquivo (extensões comuns de imagem)
-                        if p.is_file() {
-                            if let Ok(metadata) = thumb_entry.metadata() {
-                                if let Ok(modified) = metadata.modified() {
-                                    if modified > latest_time {
-                                        latest_time = modified;
-                                        latest_thumbnail = Some(p.to_string_lossy().into_owned());
-                                    }
+            // Tenta ler a pasta de thumbnails
+            if let Ok(thumb_entries) = fs::read_dir(thumb_dir) {
+                let mut latest_thumb_time = SystemTime::UNIX_EPOCH;
+
+                for thumb_entry in thumb_entries.flatten() {
+                    let p = thumb_entry.path();
+                    
+                    if p.is_file() {
+                        if let Ok(metadata) = thumb_entry.metadata() {
+                            if let Ok(modified) = metadata.modified() {
+                                // Atualiza a maior data encontrada na thumbnail
+                                if modified > latest_thumb_time {
+                                    latest_thumb_time = modified;
+                                    latest_thumbnail = Some(p.to_string_lossy().into_owned());
+                                }
+                                // Se este arquivo for o mais recente do projeto inteiro, atualiza o marco do projeto
+                                if modified > project_latest_time {
+                                    project_latest_time = modified;
                                 }
                             }
                         }
                     }
                 }
-
-                projects.push(Project {
-                    name: entry.file_name().to_string_lossy().into_owned(),
-                    path: project_path.to_string_lossy().into_owned(),
-                    thumbnail: latest_thumbnail, // Retorna o caminho ou None
-                });
             }
+
+            // Adiciona na nossa lista temporária com o timestamp
+            projects_with_time.push(ProjectWithTime {
+                project: Project {
+                    name: path.file_name().to_string_lossy().into_owned(),
+                    path: project_path.to_string_lossy().into_owned(),
+                    thumbnail: latest_thumbnail,
+                },
+                modified_time: project_latest_time,
+            });
         }
     }
-    Ok(projects)
+
+    // --- O PULO DO GATO: Ordenação ---
+    // Ordena do mais RECENTE para o mais VELHO (b.modified_time.cmp(&a.modified_time))
+    projects_with_time.sort_by(|a, b| b.modified_time.cmp(&a.modified_time));
+
+    // Extrai apenas os objetos `Project` de dentro da struct temporária para retornar ao frontend
+    let sorted_projects = projects_with_time
+        .into_iter()
+        .map(|p| p.project)
+        .collect();
+
+    Ok(sorted_projects)
 }
+
 
 #[tauri::command]
 fn delete_project(path: String) -> Result<(), String> {
@@ -1425,6 +1459,8 @@ async fn save_export_audio(
 ///
 /// O frontend já fez todo o processamento de áudio (mix, efeitos, volume, posicionamento).
 /// O Rust apenas combina os dois streams com FFmpeg.
+
+
 #[tauri::command]
 async fn assemble_exported_video(
     app_handle: tauri::AppHandle,
@@ -1530,6 +1566,11 @@ async fn assemble_exported_video(
 
     Ok(())
 }
+
+
+
+
+
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
