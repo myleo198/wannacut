@@ -1,10 +1,14 @@
 # 🚀 WannaCut - Professional Open Core Video Editor
 
+[![Reddit Community](https://img.shields.io/badge/Reddit-r%2FWannaCut-FF4500?style=flat-square&logo=reddit&logoColor=white)](https://www.reddit.com/r/WannaCut/)
+[![YouTube Channel](https://img.shields.io/badge/YouTube-@WannaCutVideoEditor-FF0000?style=flat-square&logo=youtube&logoColor=white)](https://www.youtube.com/@WannaCutVideoEditor)
+[![License](https://img.shields.io/badge/license-GNU-RED?style=flat-square)](./LICENSE)
+
 **WannaCut** is a high-performance, lightweight video editor built for the modern creator. Combining the safety of **Rust** (Tauri) with the flexibility of **React**, it offers a professional-grade timeline experience without the bloat of traditional editors.
 
-**This is Free CapCut available for Linux and Windows. More complet than OpenCut:  So give a start to the project if you like.**  **I am accepting recommendations**
+**This is Free CapCut available for Linux and Windows. More complete than other projects in the community: So give a star to the project if you like.** **I am accepting recommendations**
 
-> **Status:** 🛠️ _Premiere Version is Coming (Beta)_
+### **Status:** 🛠️ _Premiere Version is_ **Available ❗❗❗** _(Beta)_
 
 ----------
 
@@ -28,11 +32,11 @@
 
 ![Texto Alternativo](./img_readme/fadeinout.png)
 
-** Effects for video and audio **
+**Effects for video and audio:**
 
 ![Texto Alternativo](./img_readme/main2.png)
 
- ----------
+----------
 
 ## ✨ Current Features
 
@@ -47,115 +51,67 @@
 -   [x] **Intelligent Manipulation:**
     
     -   Precision **Split (S)** tool.
-        
     -   Multi-select clips and assets for bulk actions.
-        
     -   **Magnetic Snapping:** Magnetic timeline for perfect alignment.
 
-
--   [x] **Easy Fadein and Out:** Easy Fade In and Out (for video and audio) moving the conners of the clips.
+-   [x] **Easy Fadein and Out:** Easy Fade In and Out (for video and audio) moving the corners of the clips.
         
 -   [x] **Scale Controls:** Dynamic zoom (Ctrl/Alt + Scroll) and resizable UI panels.
     
 -   [x] **Asset Purge:** Automatic cleaning of unused tracks to keep the workspace optimized.
 
--   [x] **Separate Audio:** Separate or Recover Audio with one click
+-   [x] **Separate Audio:** Separate or Recover Audio with one click.
 
--   [x] **Keyframable Volume, Opacity and Speed:** Change Volume, Speed and Opacity using Keyframes, Keyframes that is not the speed has auto sync with the time distortion caused by change of speed
+-   [x] **Keyframable Volume, Opacity and Speed:** Change Volume, Speed and Opacity using Keyframes. Keyframes that are not speed-related automatically sync with the time distortion caused by speed adjustments.
 
--   [x] **Sub clips:** Create subclips before import to project
+-   [x] **Sub-clips:** Create subclips before importing them into the project.
 
+-   [x] **Web Media Linker:** Quick network integration to stream or fetch cloud-stored public video links directly into your active project timeline.
 
+-   [x] **Drag & Drop Trimming:** Resizing clips directly on the timeline edges.
+    
+-   [x] **Audio Waveforms:** Visual representation of audio tracks for sync.
+    
+-   [x] **Export Engine:** Native rendering via MoviePy.
+    
+-   [x] **Transition Library:** Fade-ins, cuts, and visual effects.    
+
+-   [x] **Silent Notification System:** A system of notifications that appears only when you click on the bell (_right corner_).
+
+-   [x] **Video and Audio effects:** Video effects like Glitch RGB, Camera Shake, Blur, and Audio Effects like Microphone and Alien.
 
 ----------
 
 ## 🛠️ Built With
 
 -   **Tauri:** High-performance desktop framework.
-    
 -   **React + TypeScript:** For a type-safe and reactive UI.
-    
 -   **Tailwind CSS:** Professional-grade styling.
-    
 -   **Lucide React:** Beautiful and consistent iconography.
-
--   **Python + Moviepy:** Binary version of a Python program to export videos
-    
 -   **Framer Motion:** Smooth transitions and UI feedback.
-    
 
 ----------
 
-## 🚀 Getting Started
+### 💻 Installation
 
-### Prerequisites
+Just go to the [WannaCut Website](https://wannacut.app) and follow the instructions.
 
--   Node.js (v18+)
-    
--   Rust toolchain
-    
--   Tauri CLI
+#### 🛠️ NEED HELP
 
--  Pyinstaller
-    
-
-### Installation
-
-Bash
-
-```
-# Clone the repository
-git clone https://github.com/ter-9001/WannaCut
-
-# Install dependencies
-npm install
-
-#go to exporter python folder
-cd src-tauri/bin
-
-#build the binary with pyinstaller
-
-pyinstaller --onefile \
-  --copy-metadata imageio \
-  --copy-metadata moviepy \
-  --collect-all moviepy \
-  --hidden-import moviepy.video.fx.all \
-  --hidden-import moviepy.audio.fx.all \
-  exporter2.py
-
-
-#move the new binary file from src-tauri/bin/dist for src-tauri/bin/ and rename with the target triple 
-
-#go back to main folder
-
-cd .. 
-cd ..
-
-# Run in development mode
-npm run tauri dev
-
-```
+> Need help or want to report bugs? [Join our Reddit Community](https://www.reddit.com/r/WannaCut/)
+>
+> Want to learn how to use WannaCut? [Watch our YouTube Channel](https://www.youtube.com/@WannaCutVideoEditor)
 
 ----------
 
 ## 🗺️ Roadmap (Upcoming Features)
 
--   [ ] **Drag & Drop Trimming:** Resizing clips directly on the timeline edges.
+-   [ ] **Mask:** Advanced shape masking (Rectangle, Circle, and Custom paths) with real-time hardware-accelerated feathering and opacity control.
     
--   [ ] **Audio Waveforms:** Visual representation of audio tracks for sync.
-    
--   [ ] **Export Engine:** Native rendering via MoviePy.
-    
--   [ ] **Transition Library:** Fade-ins, cuts, and visual effects.
-    
--   [ ] **AI-Powered Tools:** Automated subtitles and smart silence cutting.
-    
+-   [ ] **Transitions:** Smooth, dynamic video and audio transitions (Fade, Cross Dissolve, Slide, and Zoom) with full duration customization directly on the timeline edges.
 
 ----------
 
 ## ⚖️ License
 
-wannacut is open-core software licensed under the **GNU AGPLv3**.
-
-_Because creative tools should belong to everyone._
-
+WannaCut is open-core software licensed under the **GNU AGPLv3**.
