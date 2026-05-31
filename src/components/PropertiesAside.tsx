@@ -4,7 +4,7 @@ import {
   Wind, Layers, ChevronDown, Sparkles, X 
 } from 'lucide-react';
 import { motion, AnimatePresence, number } from 'framer-motion';
-import {converterSpeed, convertDB, convertZoom} from '@/App'
+import {converterSpeed, reverterSpeed, convertDB, convertZoom} from '@/App'
 
 
 
@@ -82,7 +82,8 @@ interface PropertiesAsideProps {
 
 // Seção de Ajustes Básicos (Transform, Opacity, etc.)
 const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posXState, posYState, zoomState, isZoomKNow, updateKeyframes, selectedClip, availableFonts, 
-  fontSizeState, setClips, resolveColor, bgDimXState, bgDimYState, COLOR_PALETTE, opacState, isOpacityKNow, rot2dState, rot3dState, volumeState, isVolumeKNow
+  fontSizeState, setClips, resolveColor, bgDimXState, bgDimYState, COLOR_PALETTE, opacState, isOpacityKNow, rot2dState, rot3dState, volumeState, isVolumeKNow,
+  speedState, isSpeedKNow
  }) => (
   <div className="space-y-4">
     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
@@ -477,30 +478,54 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
       )}
       
       {/* SPEED */}
-      
-      
-      {
-        /*
-        ( !isText && !isImage ) && ( <PropertyRow label="Playback Speed" keyframable={false}>
-        <div className="flex items-center gap-3">
-          <Wind size={12} className="text-sky-400" />
-          <select 
-            className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none"
-            value={selectedClip.speed || 1}
-            onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, speed: parseFloat(e.target.value)} : c))}
+      {(!isText && !isImage) && (
+        <PropertyRow
+          label="Speed"
+          activeColor={activeHex}
+          keyframable={true}
+          keyframeNow={isSpeedKNow}
+        >
+          <div className="flex items-center gap-3" 
+              
           >
-            <option value="0.5">0.5x (Slow)</option>
-            <option value="1">1.0x (Normal)</option>
-            <option value="1.5">1.5x (Fast)</option>
-            <option value="2">2.0x (Double)</option>
-          </select>
-        </div>
-      </PropertyRow>)
+            <Wind size={12} className="text-sky-400 shrink-0" color={activeHex} />
+            <input
+              type="range"
+              min={0.1}
+              max={10}
+              step={0.01}
+              value={speedState.localValue}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                speedState.setLocalValue(v);
+                updateKeyframes(selectedClip, 'speed', v);
+              }}
+              className="flex-1 accent-indigo-600"
+              style={{ accentColor: activeHex }} 
+            />
+            <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-16">
 
-      */
-      }
-      
-      
+                <input
+                  type="number"
+                  min={0.1}
+                  max={10}
+                  step={0.01}
+                  value={speedState.localValue.toFixed(2)}
+                  style={{ color: activeHex }} 
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) speedState.setLocalValue(Math.max(0.1, Math.min(10, val)));
+                  }}
+                  onBlur={speedState.handleBlurOrEnter}
+                  onKeyDown={(e) => e.key === 'Enter' && speedState.handleBlurOrEnter(e)}
+                  className="w-full bg-transparent text-[9px] font-mono text-white outline-none pr-1 py-0.5"
+
+                />
+                <span className="text-[9px] text-zinc-500"> X </span>
+            </div>
+          </div>
+        </PropertyRow>
+      )}
 
           {/* ROTATION */}
           {(isVideo || isText || isImage) && 
@@ -950,11 +975,15 @@ const resolveColor = (input: string): string => {
   const isZoomKNow = checkKeyframeNow('zoom');
   const isVolumeKNow = checkKeyframeNow('volume');
   const isOpacityKNow = checkKeyframeNow('opacity');
+  const isSpeedKNow = checkKeyframeNow('speed');
 
   // 2. Defina os valores interpolados
   const opacity = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'opacity');
   const zoom = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'zoom');
   const volume = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'volume');
+  const speedRaw = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'speed');
+  // speedRaw is stored as real speed value (e.g. 1.0, 2.0). Default is 1.0.
+  const speedValue = typeof speedRaw === 'number' ? speedRaw : 1.0;
   const position = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'position') || { x: 0, y: 0 };
   const rotation3d = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'rotation3d') || { rot: 0, rot3d: 0 };
 
@@ -962,6 +991,10 @@ const resolveColor = (input: string): string => {
   const opacState = useEditableValue(opacity, (v) => updateKeyframes(selectedClip, 'opacity', v));
   const zoomState = useEditableValue(zoom, (v) => updateKeyframes(selectedClip, 'zoom', v), 'zoom');
   const volumeState = useEditableValue(volume, (v) => updateKeyframes(selectedClip, 'volume', v), 'volume');
+  const speedState = useEditableValue(speedValue, (v) => {
+    const clamped = Math.max(0.1, Math.min(10, v));
+    updateKeyframes(selectedClip, 'speed', clamped);
+  }, 'speed');
   const posXState = useEditableValue(position.x, (v) => updateKeyframes(selectedClip, 'position', { ...position, x: v }));
   const posYState = useEditableValue(position.y, (v) => updateKeyframes(selectedClip, 'position', { ...position, y: v }));
   const rot2dState = useEditableValue(rotation3d.rot, (v) => updateKeyframes(selectedClip, 'rotation3d', { ...rotation3d, rot: v }));
@@ -1059,6 +1092,8 @@ const resolveColor = (input: string): string => {
                   volumeState = {volumeState}
                   isVolumeKNow = {isVolumeKNow}
                   isAudio={isAudio}
+                  speedState={speedState}
+                  isSpeedKNow={isSpeedKNow}
 
 
                 

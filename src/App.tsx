@@ -246,33 +246,138 @@ export const reverterVolume = (db: number): number =>
    return value
 }
 
-//convert logic 0-1 to 0.2 - 25 (0.5 is speed 1)
+//convert logic 0-1 to 0.1 - 10 (0.5 is speed 1)
 export const converterSpeed = (value: number): number => {
-  
-  if (value === 0.5) return 1.0;
-
-  if (value < 0.5) {
-    return 0.2 + ((value / 0.5) * (1.0 - 0.2));
+  const v = Math.max(0, Math.min(1, value));
+  if (v <= 0.5) {
+    // 0 → 0.1x, 0.5 → 1.0x  (linear)
+    return 0.1 + (v / 0.5) * (1.0 - 0.1);
   } else {
-    const t = (value - 0.5) / 0.5;
-    return 1.0 + (t * (25.0 - 1.0));
+    // 0.5 → 1.0x, 1.0 → 10.0x  (linear)
+    return 1.0 + ((v - 0.5) / 0.5) * (10.0 - 1.0);
   }
 };
 
-
-//undoing converterSpeed
+//undoing converterSpeed (0.1-10 range, 0.5 maps to 1x)
 export const reverterSpeed = (realSpeed: number): number => {
-  
-  if (realSpeed === 1.0) return 0.5;
-
-  if (realSpeed < 1.0) {
-    const value = ((realSpeed - 0.2) / 0.8) * 0.5;
-    return Math.max(0, value); 
+  const s = Math.max(0.1, Math.min(10, realSpeed));
+  if (s <= 1.0) {
+    return ((s - 0.1) / (1.0 - 0.1)) * 0.5;
   } else {
-    const value = ((realSpeed - 1.0) / 24.0) * 0.5 + 0.5;
-    return Math.min(1, value); 
+    return 0.5 + ((s - 1.0) / (10.0 - 1.0)) * 0.5;
   }
 };
+
+// ─── Speed Ramp: Time Remapping Utilities ────────────────────────────────────
+//
+// All speed keyframes store `value` in real speed (e.g. 1.0, 2.0, 0.5).
+// Interpolation between keyframes is LINEAR (the user draws curves with many KFs).
+//
+// Two directions:
+//   compositionTime → mediaTime  (where in the original footage is this frame?)
+//   mediaTime       → compositionTime  (where on the timeline does this frame land?)
+//
+// For a LINEAR segment from (t0, v0) to (t1, v1):
+//   speed(t) = v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+//   ∫ speed dt = v0*(t-t0) + (v1-v0)*(t-t0)² / (2*(t1-t0))
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SpeedKf { time: number; value: number }
+
+
+/**
+ * Convert composition time → media time.
+ * compositionTime is relative to the clip start (0 = first frame).
+ *
+ * Walks each speed segment and accumulates the area under speed(t)
+ * via the trapezoid rule (exact for linear interpolation).
+ */
+export function compositionToMediaTime(compositionTime: number, speedKfs: SpeedKf[]): number {
+  if (!speedKfs || speedKfs.length === 0) return compositionTime;
+
+  const sorted = [...speedKfs].sort((a, b) => a.time - b.time);
+  let mediaTime = 0;
+
+  // Build segments: each segment has a composition-time start/end and speed start/end.
+  // Before the first KF → constant at first KF value
+  // After the last KF  → constant at last KF value
+
+  // Segment list (composition time domain)
+  const segments: { t0: number; t1: number; v0: number; v1: number }[] = [];
+
+  if (sorted[0].time > 0) {
+    segments.push({ t0: 0, t1: sorted[0].time, v0: sorted[0].value, v1: sorted[0].value });
+  }
+  for (let i = 0; i < sorted.length - 1; i++) {
+    segments.push({ t0: sorted[i].time, t1: sorted[i + 1].time, v0: sorted[i].value, v1: sorted[i + 1].value });
+  }
+  // Open-ended last segment
+  segments.push({ t0: sorted[sorted.length - 1].time, t1: Infinity, v0: sorted[sorted.length - 1].value, v1: sorted[sorted.length - 1].value });
+
+  for (const seg of segments) {
+    if (compositionTime <= seg.t0) break;
+    const to = Math.min(seg.t1, compositionTime);
+    const from = seg.t0;
+    const span = to - from;
+    if (span <= 0) continue;
+    const dt = seg.t1 === Infinity ? 1 : (seg.t1 - seg.t0);
+    // linear interp of speed at `from` and `to`
+    const va = seg.v0 + (seg.v1 - seg.v0) * (from - seg.t0) / (seg.t1 === Infinity ? 1 : dt);
+    const vb = seg.v0 + (seg.v1 - seg.v0) * (to   - seg.t0) / (seg.t1 === Infinity ? 1 : dt);
+    mediaTime += (va + vb) / 2 * span; // trapezoid (exact for linear)
+  }
+
+  return mediaTime;
+}
+
+/**
+ * Convert media time → composition time (inverse of compositionToMediaTime).
+ * Uses binary search since the function is monotonically increasing.
+ */
+export function mediaToCompositionTime(mediaTime: number, speedKfs: SpeedKf[]): number {
+  if (!speedKfs || speedKfs.length === 0) return mediaTime;
+
+  // Binary search: find compositionTime such that compositionToMediaTime(ct) ≈ mediaTime
+  let lo = 0;
+  let hi = mediaTime * 20; // generous upper bound
+  for (let iter = 0; iter < 64; iter++) {
+    const mid = (lo + hi) / 2;
+    const mt = compositionToMediaTime(mid, speedKfs);
+    if (Math.abs(mt - mediaTime) < 0.0001) return mid;
+    if (mt < mediaTime) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * Given the current speed keyframes of a clip, remap all OTHER keyframes
+ * so that they stay anchored to their original media time (originalTime).
+ *
+ * Returns the full updated keyframes object.
+ */
+export function remapKeyframesToSpeed(
+  keyframes: { opacity?: any[]; volume?: any[]; rotation3d?: any[]; position?: any[]; zoom?: any[]; speed?: any[] },
+  speedKfs: SpeedKf[]
+): typeof keyframes {
+  const types = ['opacity', 'volume', 'rotation3d', 'position', 'zoom'] as const;
+  const result = { ...keyframes };
+
+  for (const type of types) {
+    const arr = (keyframes as any)[type];
+    if (!arr || arr.length === 0) continue;
+
+    (result as any)[type] = arr.map((kf: any) => {
+      const originalTime = kf.originalTime ?? kf.time;
+      const newCompositionTime = mediaToCompositionTime(originalTime, speedKfs);
+      return { ...kf, originalTime, time: newCompositionTime };
+    });
+  }
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
   // --- STATE MANAGEMENT ---
@@ -2827,13 +2932,13 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
       }
 
 
-       if (e.code === 'Period') {
+       if (e.altKey && e.code === 'Period') {
           e.preventDefault(); // Evita comportamentos padrão do navegador/WebView
           seekTo(currentTimeRef.current + 0.01)
         }
         
         // Ctrl + < (Tecla de Vírgula ',')
-        else if (e.code === 'Comma') {
+        if (e.altKey && e.code === 'Comma') {
           e.preventDefault();
           seekTo(currentTimeRef.current - 0.01)
           
@@ -4609,13 +4714,47 @@ const handleImportFile = async () => {
 
 
 
+// ─── handleSpeedKeyframeChange ────────────────────────────────────────────────
+// Called whenever speed keyframes change on the selected clip.
+// 1. Remaps all other keyframes so they stay anchored to their originalTime.
+// 2. Recalculates clip.duration so the clip block on the timeline reflects
+//    how much composition time the footage occupies at the new speed curve.
+//
+// Formula:
+//   newDuration = mediaToCompositionTime(originalduration, speedKfs)
+//
+// i.e. "how long does the original footage take to play through this speed curve?"
+const handleSpeedKeyframeChange = (clip: Clip) => {
+  const speedKfs = clip.keyframes?.speed;
+  if (!speedKfs || speedKfs.length === 0) return;
+
+  // Build a clean SpeedKf[] from the speed keyframe array
+  const speedPoints = speedKfs
+    .map(kf => ({ time: kf.time, value: Number(kf.value) }))
+    .sort((a, b) => a.time - b.time);
+
+  setClips(prev => prev.map(c => {
+    if (c.id !== clip.id) return c;
+    if (!c.keyframes) return c;
+
+    // Remap other keyframes
+    const remapped = remapKeyframesToSpeed(c.keyframes, speedPoints);
+
+    // Recalculate composition duration from originalduration (media time)
+    const newDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+
+    return { ...c, keyframes: remapped, duration: newDuration };
+  }));
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 useEffect(() => {
   if (selectedClipIds.length !== 1) return;
 
   const selectedClip = clips.find(c => c.id === selectedClipIds[0]);
   if (!selectedClip) return;
 
-  
+  handleSpeedKeyframeChange(selectedClip);
 
 }, [JSON.stringify(clips.find(c => c.id === selectedClipIds[0])?.keyframes?.speed)]);
 
@@ -4760,6 +4899,10 @@ const updateKeyframes = (
         id: crypto.randomUUID(),
         time: relativeTime,
         value: getUpdatedValue(currentValueAtTime),
+        // anchor to media time so speed remap can reposition this KF correctly
+        originalTime: (safeKeyframes.speed && safeKeyframes.speed.length > 0)
+          ? compositionToMediaTime(relativeTime, safeKeyframes.speed.map((k: Keyframe) => ({ time: k.time, value: Number(k.value) })))
+          : relativeTime
       };
       
       updatedTypeArray = [...currentTypeArray, newKeyframe].sort((a, b) => a.time - b.time);
@@ -4819,7 +4962,12 @@ const addKeyframe = (e: React.MouseEvent, clipId: string) => {
       const newKeyframe: Keyframe = {
         id: crypto.randomUUID(),
         time: time,
-        value: finalValue
+        value: finalValue,
+        // originalTime: the position in the original footage (media time).
+        // If speed KFs exist we convert composition→media; otherwise time IS media time.
+        originalTime: (c.keyframes?.speed && c.keyframes.speed.length > 0)
+          ? compositionToMediaTime(time, c.keyframes.speed.map(k => ({ time: k.time, value: Number(k.value) })))
+          : time
       };
 
       const updatedClip = {
@@ -4902,23 +5050,36 @@ const handleKeyframeDrag = (
       const minTime = kfs[idx - 1]?.time || 0;
       const maxTime = kfs[idx + 1]?.time || c.duration;
 
+      const clampedTime = Math.max(minTime, Math.min(maxTime, newTime));
 
-      if( view == 'speed')
-        converterSpeed(newValue)
+      // Convert raw 0-1 visual value → real domain value
+      const realValue = view === 'speed'  ? converterSpeed(newValue)  :
+                        view === 'volume' ? convertDB(newValue)        : newValue;
 
-      kfs[idx] = {
+      // For speed KFs the time IS already composition time, so originalTime = itself.
+      // For other KFs dragged in time we update originalTime to follow (drag = intentional reposition).
+      const updatedKf: Keyframe = {
         ...kfs[idx],
-        time: Math.max(minTime, Math.min(maxTime, newTime)),
-        value: newValue
+        time: clampedTime,
+        value: realValue,
+        ...(view !== 'speed' ? { originalTime: clampedTime } : {})
       };
 
-     
-     
+      kfs[idx] = updatedKf;
 
+      const updatedKeyframes = { ...c.keyframes, [view]: kfs };
+
+      // If a speed KF was dragged, remap all other KFs immediately and update duration
+      if (view === 'speed') {
+        const speedPoints = kfs.map(k => ({ time: k.time, value: Number(k.value) }));
+        const remapped = remapKeyframesToSpeed(updatedKeyframes, speedPoints);
+        const newDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+        return { ...c, keyframes: remapped, duration: newDuration };
+      }
 
       return {
         ...c,
-        keyframes: { ...c.keyframes, [view]: kfs }
+        keyframes: updatedKeyframes
       };
     }));
   };
@@ -4942,13 +5103,27 @@ const deleteKeyframe = (clipId: string, kfId: string, view: string) => {
     const currentKfs = c.keyframes?.[view as keyof NonNullable<Clip['keyframes']>] || [];
     const filteredKfs = currentKfs.filter(k => k.id !== kfId);
 
-    return {
-      ...c,
-      keyframes: {
-        ...c.keyframes,
-        [view]: filteredKfs
-      }
+    const updatedKeyframes = {
+      ...c.keyframes,
+      [view]: filteredKfs
     };
+
+    // If a speed KF was deleted, remap all other KFs and update duration
+    if (view === 'speed') {
+      const speedPoints = (filteredKfs as Keyframe[]).map(k => ({ time: k.time, value: Number(k.value) }));
+
+      // If no speed KFs remain, duration reverts to originalduration (speed = 1x throughout)
+      if (speedPoints.length === 0) {
+        const clearedKeyframes = { ...updatedKeyframes, speed: [] };
+        return { ...c, keyframes: clearedKeyframes, duration: c.originalduration };
+      }
+
+      const remapped = remapKeyframesToSpeed(updatedKeyframes, speedPoints);
+      const newDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+      return { ...c, keyframes: remapped, duration: newDuration };
+    }
+
+    return { ...c, keyframes: updatedKeyframes };
   }));
 };
 
@@ -5059,7 +5234,9 @@ return (
                     <X size={14} /> 
                   </button>
                   {proj.thumbnail ? (
-                    <img src={convertFileSrc(proj.thumbnail)} alt="Preview" />
+                    <div className="aspect-video bg-[#1a1a1a] border-b border-zinc-800 overflow-hidden">
+                      <img src={convertFileSrc(proj.thumbnail)} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
                   ) : (
                     <div className="aspect-video bg-[#1a1a1a] flex items-center justify-center border-b border-zinc-800">
                       <LayoutGrid size={40} className="text-zinc-800 group-hover:text-fuchsia-800/20" />
