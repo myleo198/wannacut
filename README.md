@@ -80,6 +80,8 @@
 
 -   [x] **Video and Audio effects:** Video effects like Glitch RGB, Camera Shake, Blur, and Audio Effects like Microphone and Alien.
 
+-   [x] **Smart Edge Navigation:** Dedicated shortcuts to instantly jump between clip edges (edit points) for fast timeline traversal.
+
 ----------
 
 ## 🛠️ Built With
