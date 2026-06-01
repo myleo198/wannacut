@@ -303,7 +303,7 @@ export const ItensAside = ({
       {filteredAssets.length > 0 ? (
         filteredAssets.map((asset, index) => (
           <motion.div
-            key={asset.path}
+            key={asset.path + (asset.thumbnailUrl || "")}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
@@ -320,19 +320,20 @@ export const ItensAside = ({
             onDragStart={(e) => handleDragStart(e, null, null, null, asset.name, false, null)}
           >
             {/* Thumbnail Logic */}
-            {asset.type !== 'audio' && asset.thumbnailUrl ? (
+            {asset.type === 'audio' ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#121212]">
+                <Music size={32} className="text-zinc-700 transition-colors duration-300 group-hover:text-cyan-500" />
+              </div>
+            ) : asset.thumbnailUrl ? (
               <img
                 src={asset.thumbnailUrl}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                 alt={asset.name}
               />
-            ) : asset.type === 'audio' ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#121212]">
-                <Music size={32} className="text-zinc-700 transition-colors duration-300 group-hover:text-cyan-500" />
-              </div>
             ) : (
+              // Thumbnail still generating — pulse placeholder
               <div className="absolute inset-0 flex items-center justify-center bg-[#121212]">
-                 <Play size={24} className="text-zinc-800" />
+                <div className="w-6 h-6 rounded-full border-2 border-zinc-700 border-t-cyan-500 animate-spin" />
               </div>
             )}
 

@@ -480,53 +480,7 @@ async fn cancel_export(state: State<'_, ExportState>) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn generate_thumbnail(
-    app_handle: tauri::AppHandle,
-    project_path: String,
-    file_name: String,
-    time_seconds: f64
-) -> Result<String, String> {
 
-    let thumbnail_folder = std::path::Path::new(&project_path).join("thumbnails");
-    
-    // Create folder if does not exist
-    if !thumbnail_folder.exists() {
-        std::fs::create_dir_all(&thumbnail_folder).map_err(|e| e.to_string())?;
-    }
-    // Paths based on project structure
-    let video_path = PathBuf::from(&project_path).join("videos").join(&file_name);
-    let output_name = format!("{}-{}.png", file_name, time_seconds);
-    let output_path = PathBuf::from(&project_path).join("thumbnails").join(&output_name);
-
-    // If the thumbnail already exists, skip generation to save resources
-    if output_path.exists() {
-        return Ok(output_path.to_string_lossy().into_owned());
-    }
-
-    // Execute FFmpeg Sidecar
-    // -ss: fast seek to timestamp / -i: input / -frames:v 1: capture one frame / -q:v 2: quality level
-    let sidecar_command = app_handle
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| e.to_string())?
-        .args([
-            "-ss", &time_seconds.to_string(), // Seek to specific time
-            "-i", &video_path.to_string_lossy(), // Input source
-            "-frames:v", "1", // Grab exactly 1 frame
-            "-update", "1",   // ESSENTIAL: Specifies a single image output rather than a sequence
-            "-y",             // Overwrite if exists (prevents hanging on prompts)
-            &output_path.to_string_lossy(), // Output path
-        ]);
-
-    let output = sidecar_command.output().await.map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        Ok(output_path.to_string_lossy().into_owned())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).into_owned())
-    }
-}
 
 
 
@@ -830,6 +784,51 @@ async fn download_youtube_video(
     Err(format!("yt-dlp error: {}", stderr))
 }
 
+
+#[tauri::command]
+async fn generate_thumbnail(
+    project_path: String,
+    file_name: String,
+    time_seconds: f64
+) -> Result<String, String> {
+
+    let thumbnail_folder = std::path::Path::new(&project_path).join("thumbnails");
+
+    // Create folder if does not exist
+    if !thumbnail_folder.exists() {
+        std::fs::create_dir_all(&thumbnail_folder).map_err(|e| e.to_string())?;
+    }
+
+    // Paths based on project structure
+    let video_path = PathBuf::from(&project_path).join("videos").join(&file_name);
+    let output_name = format!("{}-{}.png", file_name, time_seconds);
+    let output_path = PathBuf::from(&project_path).join("thumbnails").join(&output_name);
+
+    // If the thumbnail already exists, skip generation to save resources
+    if output_path.exists() {
+        return Ok(output_path.to_string_lossy().into_owned());
+    }
+
+    // Execute FFmpeg from system PATH
+    // -ss: fast seek to timestamp / -i: input / -frames:v 1: capture one frame / -q:v 2: quality level
+    let output = std::process::Command::new("ffmpeg")
+        .args([
+            "-ss", &time_seconds.to_string(), // Seek to specific time
+            "-i", &video_path.to_string_lossy(), // Input source
+            "-frames:v", "1", // Grab exactly 1 frame
+            "-update", "1",   // ESSENTIAL: Specifies a single image output rather than a sequence
+            "-y",             // Overwrite if exists (prevents hanging on prompts)
+            &output_path.to_string_lossy(), // Output path
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if output.status.success() {
+        Ok(output_path.to_string_lossy().into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).into_owned())
+    }
+}
 
 
 
@@ -1461,6 +1460,7 @@ async fn save_export_audio(
 /// O Rust apenas combina os dois streams com FFmpeg.
 
 
+
 #[tauri::command]
 async fn assemble_exported_video(
     app_handle: tauri::AppHandle,
@@ -1482,8 +1482,7 @@ async fn assemble_exported_video(
     // -----------------------------------------------------------------------
     let step1 = app_handle
         .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| e.to_string())?
+        .command("ffmpeg") // Corrigido para .command() minúsculo (comando global)
         .args([
             "-y",
             "-framerate", &fps.to_string(),
@@ -1537,13 +1536,10 @@ async fn assemble_exported_video(
 
     final_args.push(target_path.clone());
 
-    let final_args_ref: Vec<&str> = final_args.iter().map(|s| s.as_str()).collect();
-
     let step2 = app_handle
         .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| e.to_string())?
-        .args(&final_args_ref)
+        .command("ffmpeg") // Corrigido de .sidecar() para .command() global
+        .args(final_args)  // O Tauri v2 consome o Vec<String> diretamente aqui
         .output()
         .await
         .map_err(|e| format!("FFmpeg (mux final) falhou: {}", e))?;
@@ -1562,11 +1558,11 @@ async fn assemble_exported_video(
     let _ = std::fs::remove_file(&video_only_path);
     let _ = std::fs::remove_file(&audio_wav_path);
 
+    // Emissão do progresso final para o frontend
     let _ = app_handle.emit("export-progress", 100u32);
 
     Ok(())
 }
-
 
 
 

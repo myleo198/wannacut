@@ -646,7 +646,12 @@ const [wannacutSettings, setwannacutSettings] = useState({
 
 // Efeito para validar a pasta de configurações ao abrir o app
 useEffect(() => {
-  const checkConfig = async () => {
+ 
+  checkConfig();
+}, []);
+
+
+ const checkConfig = async () => {
 
     console.log('entrou em check configs',localStorage.getItem("wannacut_settings_folder"))
     const settingsFolder = localStorage.getItem("wannacut_settings_folder");
@@ -673,6 +678,7 @@ useEffect(() => {
 
         console.log('workspace:', parsed.workspace)
         setRootPath(parsed.workspace)
+        console.log('rootPath está como', parsed.workspace)
 
 
       } catch (e) {
@@ -682,11 +688,8 @@ useEffect(() => {
       }
     }
   };
-  checkConfig();
-}, []);
 
-
-
+ 
 
 
 
@@ -2601,7 +2604,7 @@ const handleUndo = () => {
 
 const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
   const { minStart, maxEndTimestamp } = getClipBoundaries(id);
-  const deltaSeconds = deltaX / PIXELS_PER_SECOND; // Remove 0.2 if you want raw mouse precision
+  const deltaSeconds = (deltaX / PIXELS_PER_SECOND) * 0.5; // Remove 0.2 if you want raw mouse precision
 
   setClips(prev => prev.map(clip => {
     if (clip.id !== id) return clip;
@@ -4072,115 +4075,88 @@ const handleFadeDrag = (e: React.MouseEvent, clipId: string, type: 'in' | 'out',
 
   // --- PROJECT METHODS ---
 
-
-  const loadProjects = async () => {
-
-    
-
-    if (!rootPath) return;
-    try {
-      const list = await invoke('list_projects', { rootPath });
-      setProjects(list as Project[]);
-      
-    } catch (e) { console.error(e); }
-  };
+const loadProjects = async (explicitRootPath?: string) => {
+  const pathToUse = explicitRootPath ?? rootPath;
+  if (!pathToUse) return;
+  try {
+    const list = await invoke('list_projects', { rootPath: pathToUse });
+    setProjects(list as Project[]);
+  } catch (e) { console.error(e); }
+};
 
   const loadAssets = async () => {
   if (!currentProjectPath) return;
   try {
     const list = await invoke<string[]>('list_assets', { projectPath: currentProjectPath });
-    
-    //  .map to take name files in a array of promises
-    const assetPromises = list.map(async (filename) => {
+
+    // 1. Show all assets immediately with no thumbnail so the UI is responsive
+    const placeholders: Asset[] = list.map((filename) => {
       const extension = filename.split('.').pop()?.toLowerCase();
       const filePath = `${currentProjectPath}/videos/${filename}`;
-      
+      let type: 'video' | 'audio' | 'image' = 'video';
+      if (['jpg', 'jpeg', 'png', 'webp'].includes(extension || '')) type = 'image';
+      if (['mp3', 'wav', 'ogg'].includes(extension || '')) type = 'audio';
+      return { name: filename, path: filePath, duration: 10, type, thumbnailUrl: '' };
+    });
+    setAssets(placeholders);
+
+    // 2. Enrich each asset individually — as soon as one is ready it patches state
+    list.forEach(async (filename) => {
+      const extension = filename.split('.').pop()?.toLowerCase();
+      const filePath = `${currentProjectPath}/videos/${filename}`;
+
       let type: 'video' | 'audio' | 'image' = 'video';
       if (['jpg', 'jpeg', 'png', 'webp'].includes(extension || '')) type = 'image';
       if (['mp3', 'wav', 'ogg'].includes(extension || '')) type = 'audio';
 
       let duration = 10;
-      let dimensions: Position | null = null
+      let dimensions: Position | null = null;
 
       if (type !== 'image') {
         try {
-          const meta = await invoke<{duration: number}>('get_duration', { path: filePath });
+          const meta = await invoke<{ duration: number }>('get_duration', { path: filePath });
           duration = meta.duration;
         } catch (err) {
-          console.warn(`Não foi possível ler meta de ${filename}`, err);
+          console.warn(`Could not read meta for ${filename}`, err);
         }
       }
 
-
-      if(type == 'video')
-      {
-         try {
-            await invoke('extract_audio', { 
-              projectPath: currentProjectPath, 
-              fileName: filename 
-            });
-            
-          } catch (e) {
-            console.error("Falha na extração automática:", e);
-          }
+      if (type === 'video') {
+        try {
+          await invoke('extract_audio', { projectPath: currentProjectPath, fileName: filename });
+        } catch (e) {
+          console.error('Audio extraction failed:', e);
+        }
       }
 
-
-      if((type == 'video') || (type == 'image'))
-      {
-           try {
-            dimensions =  await invoke('get_asset_dimensions', { 
-              path: filePath
-            });
-
-
-            
-          } catch (e) {
-            console.error("Falha na extração automática:", e);
-          }
+      if (type === 'video' || type === 'image') {
+        try {
+          dimensions = await invoke('get_asset_dimensions', { path: filePath });
+        } catch (e) {
+          console.error('Dimension read failed:', e);
+        }
       }
 
-
-
-
-
-
-      let thumbPath = "";
+      // Thumbnail: images are instant, videos go through FFmpeg
+      let thumbnailUrl = '';
       if (type === 'image') {
-        thumbPath = convertFileSrc(filePath);
+        thumbnailUrl = convertFileSrc(filePath);
       } else if (type === 'video') {
-        thumbPath = await getThumbnail(currentProjectPath, filename, 2);
+        thumbnailUrl = (await getThumbnail(currentProjectPath, filename, 2)) ?? '';
       }
 
-      
-       if((type == 'video') || (type == 'image'))
-        return {
-          name: filename,
-          path: filePath,
-          duration: duration,
-          type: type,
-          thumbnailUrl: thumbPath,
-          dimensions: dimensions          
-        } as Asset;
-
-
-        return {
-        name: filename,
-        path: filePath,
-        duration: duration,
-        type: type,
-        thumbnailUrl: thumbPath
-      } as Asset;
+      // Patch only this asset in state — others remain untouched
+      setAssets(prev =>
+        prev.map(a =>
+          a.name === filename
+            ? { ...a, duration, dimensions: dimensions ?? undefined, thumbnailUrl }
+            : a
+        )
+      );
     });
 
-    // Wait for all metadata to be read in parallel.
-    const resolvedAssets = await Promise.all(assetPromises);
-    
-    if (resolvedAssets.length > 0) {
-      setAssets(resolvedAssets);
-    }
-  } catch (e) { 
-    console.error("Falha ao carregar assets:", e); 
+  } catch (e) {
+    console.error('Failed to load assets:', e);
   }
 };
 
@@ -4190,28 +4166,23 @@ const handleFadeDrag = (e: React.MouseEvent, clipId: string, type: 'in' | 'out',
   };
 
 
-  const handleFinishSetup = async () => {
-  if (rootPath && projectName) {
+const handleFinishSetup = async () => {
 
+
+  console.log('handle finished', rootPath, projectName)
+
+  if (rootPath && projectName) {
     try {
-      
       const finalPath = await invoke<string>('create_project_setup', { 
         rootPath, 
         projectName,
         config: projectConfig 
       });
 
-      
-      
-      // 2. Atualizamos o estado do caminho do projeto atual
       setCurrentProjectPath(finalPath);
-
-      // 3. UI Updates
       setIsCreatingNew(false);
-      loadProjects();
-
+      loadProjects(rootPath); // <-- passa rootPath explícito aqui!
       showNotify("Project Created!", "success");
-      
       
     } catch (e) {
       console.error(e);
@@ -4647,40 +4618,122 @@ const filteredAssets = assets.filter(asset =>
 
 const handleImportFile = async () => {
   try {
-    // 1. Open native dialog to select a file
+    // Restore last used folder (if any)
+    const lastFolder = localStorage.getItem("wannacut_last_import_folder") || undefined;
+
+    // 1. Open native dialog - multiple files allowed, starting at last folder
     const selected = await open({
-      multiple: false,
+      multiple: true,
+      defaultPath: lastFolder,
       filters: [{
         name: 'Media',
         extensions: ['mp4', 'mkv', 'avi', 'mov', 'mp3', 'wav', 'ogg', 'png', 'jpg', 'jpeg', 'webp']
       }]
     });
 
-    if (!selected || Array.isArray(selected)) return; 
-    
-    const filePath = selected as string;
-    const fileName = filePath.split(/[\\/]/).pop() || "File";
-    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    if (!selected) return;
 
-    // 2. Define allowed extensions for each type
-    
+    // Normalise to array whether the user picked one or many files
+    const filePaths: string[] = Array.isArray(selected) ? selected : [selected];
 
-    // 3. Check if the extension is valid
-    const isImage = imageExtensions.includes(extension);
-    const isAudio = audioExtensions.includes(extension);
-    const isVideo = videoExtensions.includes(extension);
+    if (filePaths.length === 0) return;
 
-    if (!isImage && !isAudio && !isVideo) {
-      showNotify("Invalid file type: Only video, audio, and images are allowed", "error");
-      return;
+    // Persist the folder of the first selected file for next time
+    const firstDir = filePaths[0].replace(/[\/][^\/]+$/, '');
+    localStorage.setItem("wannacut_last_import_folder", firstDir);
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const filePath of filePaths) {
+      const fileName  = filePath.split(/[\/]/).pop() || "File";
+      const extension = fileName.split('.').pop()?.toLowerCase() || '';
+
+      const isImage = imageExtensions.includes(extension);
+      const isAudio = audioExtensions.includes(extension);
+      const isVideo = videoExtensions.includes(extension);
+
+      if (!isImage && !isAudio && !isVideo) {
+        skipped++;
+        continue;
+      }
+
+      const destPath = `${currentProjectPath}/videos/${fileName}`;
+      const type: 'video' | 'audio' | 'image' = isImage ? 'image' : isAudio ? 'audio' : 'video';
+
+      // 2. Add placeholder immediately so the asset appears in the list right away
+      setAssets(prev => {
+        if (prev.some(a => a.name === fileName)) return prev;
+        return [...prev, { name: fileName, path: destPath, duration: 10, type, thumbnailUrl: '' }];
+      });
+
+      // 3. Copy file to project
+      await invoke('import_asset', { projectPath: currentProjectPath, filePath });
+      imported++;
+
+      // 4. Enrich asynchronously - thumbnail + duration + dimensions appear as soon as ready
+      (async () => {
+        let duration = 10;
+        let dimensions: Position | null = null;
+        let thumbnailUrl = '';
+
+        if (type !== 'image') {
+          try {
+            const meta = await invoke<{ duration: number }>('get_duration', { path: destPath });
+            duration = meta.duration;
+          } catch (e) { /* keep default */ }
+        }
+
+        if (type === 'video') {
+          try { await invoke('extract_audio', { projectPath: currentProjectPath, fileName }); }
+          catch (e) { /* non-fatal */ }
+        }
+
+        if (type === 'video' || type === 'image') {
+          try { dimensions = await invoke('get_asset_dimensions', { path: destPath }); }
+          catch (e) { /* non-fatal */ }
+        }
+
+        if (type === 'image') {
+          thumbnailUrl = convertFileSrc(destPath);
+        } else if (type === 'video') {
+          // Call generate_thumbnail directly — avoids the assets-state closure issue
+          // where getThumbnail() would return null because the placeholder isn't
+          // committed to the state yet when this async closure runs.
+          try {
+            const thumbPath = await invoke<string>('generate_thumbnail', {
+              projectPath: currentProjectPath,
+              fileName,
+              timeSeconds: 2
+            });
+            thumbnailUrl = convertFileSrc(thumbPath);
+          } catch (e) {
+            console.error('Thumbnail generation failed:', e);
+          }
+        }
+
+        // Patch only this asset in state - others remain untouched
+        setAssets(prev =>
+          prev.map(a =>
+            a.name === fileName
+              ? { ...a, duration, dimensions: dimensions ?? undefined, thumbnailUrl }
+              : a
+          )
+        );
+      })();
     }
 
-    await invoke('import_asset', { projectPath: currentProjectPath, filePath: filePath });
-     loadAssets();
-    showNotify("Assets imported", "success");
+    if (imported > 0) {
+      showNotify(
+        skipped > 0
+          ? `${imported} asset(s) imported, ${skipped} skipped (invalid type)`
+          : `${imported} asset(s) imported`,
+        "success"
+      );
+    } else {
+      showNotify("No valid media files selected", "error");
+    }
 
-
-    
   } catch (err) {
     console.error(err);
     showNotify("Error selecting or reading file", "error");
@@ -4714,14 +4767,27 @@ const handleImportFile = async () => {
 
 
 
+// ─── getMaxDurationForClip ────────────────────────────────────────────────────
+// Returns the maximum duration a clip can have at its current start position,
+// limited by the start of the next clip on the same track (if any).
+const getMaxDurationForClip = (targetClip: Clip, allClips: Clip[]): number => {
+  const ABSOLUTE_MAX = 7200; // 2 hours
+  const nextClip = allClips
+    .filter(c => c.trackId === targetClip.trackId && c.id !== targetClip.id && c.start > targetClip.start)
+    .sort((a, b) => a.start - b.start)[0];
+  return nextClip ? nextClip.start - targetClip.start : ABSOLUTE_MAX;
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ─── handleSpeedKeyframeChange ────────────────────────────────────────────────
 // Called whenever speed keyframes change on the selected clip.
 // 1. Remaps all other keyframes so they stay anchored to their originalTime.
 // 2. Recalculates clip.duration so the clip block on the timeline reflects
 //    how much composition time the footage occupies at the new speed curve.
+//    The new duration is capped at the free space before the next clip.
 //
 // Formula:
-//   newDuration = mediaToCompositionTime(originalduration, speedKfs)
+//   newDuration = min(mediaToCompositionTime(originalduration, speedKfs), maxAllowed)
 //
 // i.e. "how long does the original footage take to play through this speed curve?"
 const handleSpeedKeyframeChange = (clip: Clip) => {
@@ -4741,7 +4807,11 @@ const handleSpeedKeyframeChange = (clip: Clip) => {
     const remapped = remapKeyframesToSpeed(c.keyframes, speedPoints);
 
     // Recalculate composition duration from originalduration (media time)
-    const newDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+    const uncappedDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+
+    // Cap to the free space before the next clip on the same track
+    const maxAllowed = getMaxDurationForClip(c, prev);
+    const newDuration = Math.min(uncappedDuration, maxAllowed);
 
     return { ...c, keyframes: remapped, duration: newDuration };
   }));
@@ -5073,7 +5143,10 @@ const handleKeyframeDrag = (
       if (view === 'speed') {
         const speedPoints = kfs.map(k => ({ time: k.time, value: Number(k.value) }));
         const remapped = remapKeyframesToSpeed(updatedKeyframes, speedPoints);
-        const newDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+        const uncappedDuration = mediaToCompositionTime(c.originalduration, speedPoints);
+        // Cap to the free space before the next clip on the same track
+        const maxAllowed = getMaxDurationForClip(c, prev);
+        const newDuration = Math.min(uncappedDuration, maxAllowed);
         return { ...c, keyframes: remapped, duration: newDuration };
       }
 
@@ -6653,6 +6726,7 @@ return (
       showNotify("Error parsing backup data package.", "error");
     }
   }}
+  checkConfig = {checkConfig}
    
   />
 

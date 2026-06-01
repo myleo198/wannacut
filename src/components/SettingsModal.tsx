@@ -33,6 +33,8 @@ interface Props {
   // Novas propriedades necessárias:
   currentProjectPath: string;
   onLoadHistoryVersion: (projectDataJson: string) => void;
+  checkConfig:() => void
+
 }
 
 export const SettingsModal: React.FC<Props> = ({ 
@@ -43,7 +45,9 @@ export const SettingsModal: React.FC<Props> = ({
   isProjectLoaded,
   showNotify,
   currentProjectPath,
-  onLoadHistoryVersion 
+  onLoadHistoryVersion,
+  checkConfig
+
 }) => {
   // Ajuste: Se não houver projeto, a aba inicial DEVE ser' (System)
   const [activeTab, setActiveTab] = useState(isProjectLoaded ? 'project' : 'wannacut');
@@ -235,6 +239,8 @@ const executeRestore = async () => {
           setwannacutSettings(newS);
           
           await savewannacutSettings(newS);
+
+          await checkConfig()
         }
         
         showNotify(`${type} successfully updated to: ${fullPath}`, 'success');
@@ -494,6 +500,7 @@ const executeRestore = async () => {
              <button 
               onClick={() => { 
                 if (activeTab === 'project') onSaveProject(projSettings); 
+                checkConfig()
                 onClose(); 
               }}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black uppercase tracking-[0.2em] rounded transition-all shadow-lg shadow-blue-900/10"
