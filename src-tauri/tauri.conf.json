@@ -11,13 +11,18 @@
   },
   "app": {
     "windows": [
-      {
-        "title": "WannaCut",
-        "width": 1920,
-        "height": 1080,
-        "dragDropEnabled": true
-      }
-    ],
+    {
+      "title": "WannaCut",
+      "width": 1280,
+      "height": 720,
+      "minWidth": 800,
+      "minHeight": 600,
+      "resizable": true,
+      "maximized": true,
+      "dragDropEnabled": true
+    }
+    ]
+    ,
     "security": {
       "csp": null,
       "assetProtocol": {

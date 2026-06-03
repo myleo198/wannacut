@@ -1571,7 +1571,7 @@ useEffect(() => {
 
 
 const lastFrameTimeRef = useRef<number>(0);
-const FPS_LIMIT = 1000 / 10; // 30 FPS (aprox 33ms)
+const FPS_LIMIT = 1000 / 20; // 30 FPS (aprox 33ms)
 
 const getOpacityAtTime = (clip: Clip) => {
   if (!clip.keyframes || !clip.keyframes.opacity || clip.keyframes.opacity.length === 0) {
@@ -3440,8 +3440,13 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
           }
         };
         img.src = frameBase64;
-      } catch (err) {
-        console.error("Frame render error:", err);
+      } catch (_err) {
+        // On any frame error, just fill the canvas black — no console noise.
+        const ctx = canvasRef2.current?.getContext("2d");
+        if (ctx && canvasRef2.current) {
+          ctx.fillStyle = "#000000";
+          ctx.fillRect(0, 0, canvasRef2.current.width || 1280, canvasRef2.current.height || 720);
+        }
       }
     };
 
@@ -3486,21 +3491,40 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
       if (!isPlaying2) {
         if (audioRef2.current && hasAudio2.current) {
           audioRef2.current.pause();
+          // Sync internal timer to audio position so they stay aligned on resume
+          internalTime2.current = audioRef2.current.currentTime;
         }
         return;
       }
 
-      // Inicia o áudio se disponível
+      // Inicia o áudio se disponível, sincronizando o currentTime com o timer interno
       if (audioRef2.current && hasAudio2.current) {
-        audioRef2.current.play().catch(() => { hasAudio2.current = false; });
+        // Always re-sync audio position to internalTime before playing,
+        // in case the audio element drifted or was paused at a different point.
+        const targetTime = internalTime2.current;
+        if (Math.abs(audioRef2.current.currentTime - targetTime) > 0.15) {
+          audioRef2.current.currentTime = targetTime;
+        }
+        audioRef2.current.play().catch((err) => {
+          // Don't permanently disable audio — it may just not be ready yet.
+          // Only disable if it's a real src error (handled separately via 'error' event).
+          console.warn("audio play() failed, will retry via interval:", err);
+        });
       }
 
       const TICK = 1000 / 10; // 10 fps de polling
       const interval = setInterval(() => {
         let time: number;
 
-        if (audioRef2.current && hasAudio2.current) {
+        if (audioRef2.current && hasAudio2.current && !audioRef2.current.paused) {
+          // Audio is running — use it as the source of truth
           time = audioRef2.current.currentTime;
+          internalTime2.current = time;
+        } else if (audioRef2.current && hasAudio2.current && audioRef2.current.paused) {
+          // Audio stalled/paused unexpectedly — nudge it back to play
+          audioRef2.current.play().catch(() => {});
+          internalTime2.current += TICK / 1000;
+          time = internalTime2.current;
         } else {
           internalTime2.current += TICK / 1000;
           // Para no fim do asset

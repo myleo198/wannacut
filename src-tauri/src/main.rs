@@ -751,7 +751,7 @@ async fn download_youtube_video(
                 "--no-check-certificate",
                 "--prefer-free-formats",
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                 "--merge-output-format", "mp4",
                 "-o", &format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()),
                 &url,

@@ -303,7 +303,7 @@ export const ItensAside = ({
       {filteredAssets.length > 0 ? (
         filteredAssets.map((asset, index) => (
           <motion.div
-            key={asset.path + (asset.thumbnailUrl || "")}
+            key={asset.path}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
@@ -326,9 +326,15 @@ export const ItensAside = ({
               </div>
             ) : asset.thumbnailUrl ? (
               <img
-                src={asset.thumbnailUrl}
+                src={`${asset.thumbnailUrl}?t=${encodeURIComponent(asset.thumbnailUrl)}`}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                 alt={asset.name}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+                onLoad={(e) => {
+                  (e.target as HTMLImageElement).style.display = '';
+                }}
               />
             ) : (
               // Thumbnail still generating — pulse placeholder
