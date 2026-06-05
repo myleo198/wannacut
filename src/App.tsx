@@ -2226,42 +2226,43 @@ const handleRenameAsset = async (oldName: string, newName: string) => {
 
 
 
-const getThumbnail = async (projectPath: string, fileName: string, requestedTime: number) => {
-  // 1. Find the asset to determine its type and duration
-  const asset = assets.find(a => a.name === fileName);
-  if (!asset) return null;
+const getThumbnail = async (
+  projectPath: string,
+  fileName: string,
+  requestedTime: number,
+  // Overrides opcionais: usados logo após download/import para não depender do estado `assets`
+  overrideType?: 'video' | 'audio' | 'image',
+  overrideDuration?: number,
+  overridePath?: string
+) => {
+  // 1. Usa overrides se disponíveis, senão busca no estado `assets`
+  const assetFromState = assets.find(a => a.name === fileName);
+  const type     = overrideType     ?? assetFromState?.type;
+  const duration = overrideDuration ?? assetFromState?.duration;
+  const filePath = overridePath     ?? assetFromState?.path ?? `${projectPath}/videos/${fileName}`;
 
-  // 2. Rule: Audio files do not have thumbnails
-  if (asset.type === 'audio') {
-    return null; 
-  }
+  if (!type) return null;
 
-  // 3. Rule: For images, the thumbnail is the image itself
-  if (asset.type === 'image') {
-    return asset.path; // Return the original path
-  }
+  // 2. Áudio não tem thumbnail
+  if (type === 'audio') return null;
 
-  // 4. Rule: Time adjustment (if requestedTime > duration, default to time 0)
+  // 3. Imagem: a própria imagem é a thumbnail
+  if (type === 'image') return convertFileSrc(filePath);
+
+  // 4. Ajuste de tempo (se além da duração, usa 0)
   let finalTime = requestedTime;
-  if (requestedTime >= asset.duration) {
+  if (duration !== undefined && requestedTime >= duration) {
     finalTime = 0;
   }
 
   try {
-    // 5. Call Rust (Tauri command) to generate or retrieve the thumbnail
+    // 5. Gera via Rust/FFmpeg
     const thumbPath = await invoke<string>('generate_thumbnail', {
       projectPath,
       fileName,
       timeSeconds: finalTime
     });
-
-    // To display the file in HTML/React from the local file system, 
-    // we use Tauri's convertFileSrc to get a safe URL
-    // TRANSFORMING THE PATH:
-    const safeUrl = convertFileSrc(thumbPath); 
-
-    
-    return safeUrl
+    return convertFileSrc(thumbPath);
   } catch (error) {
     console.error("Error generating thumbnail:", error);
     return null;
@@ -3502,7 +3503,7 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
         // Always re-sync audio position to internalTime before playing,
         // in case the audio element drifted or was paused at a different point.
         const targetTime = internalTime2.current;
-        if (Math.abs(audioRef2.current.currentTime - targetTime) > 0.15) {
+        if (Math.abs(audioRef2.current.currentTime - targetTime) > 0.05) {
           audioRef2.current.currentTime = targetTime;
         }
         audioRef2.current.play().catch((err) => {
@@ -4162,11 +4163,13 @@ const loadProjects = async (explicitRootPath?: string) => {
       }
 
       // Thumbnail: images are instant, videos go through FFmpeg
+      // Passamos os overrides (type, duration, filePath) para não depender do estado `assets`,
+      // que pode ainda não ter sido atualizado (ex: logo após download via YT-DLP).
       let thumbnailUrl = '';
       if (type === 'image') {
         thumbnailUrl = convertFileSrc(filePath);
       } else if (type === 'video') {
-        thumbnailUrl = (await getThumbnail(currentProjectPath, filename, 2)) ?? '';
+        thumbnailUrl = (await getThumbnail(currentProjectPath, filename, 2, type, duration, filePath)) ?? '';
       }
 
       // Patch only this asset in state — others remain untouched
@@ -5489,11 +5492,12 @@ return (
         const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         const newTime = percent * duration;
 
-        // Atualiza o relógio correto
+        // Atualiza SEMPRE o relógio interno — usado para sincronizar o play após seek
+        internalTime2.current = newTime;
+
+        // Também atualiza o áudio se disponível
         if (audioRef2.current && hasAudio2.current) {
           audioRef2.current.currentTime = newTime;
-        } else {
-          internalTime2.current = newTime;
         }
 
         setCurrentTime2(newTime);
