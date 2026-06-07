@@ -83,7 +83,7 @@ interface PropertiesAsideProps {
 // Seção de Ajustes Básicos (Transform, Opacity, etc.)
 const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posXState, posYState, zoomState, isZoomKNow, updateKeyframes, selectedClip, availableFonts, 
   fontSizeState, setClips, resolveColor, bgDimXState, bgDimYState, COLOR_PALETTE, opacState, isOpacityKNow, rot2dState, rot3dState, volumeState, isVolumeKNow,
-  speedState, isSpeedKNow
+  speedState, isSpeedKNow, isPositionKNow
  }) => (
   <div className="space-y-4">
     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
@@ -125,7 +125,7 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
               {/* Captura os valores atuais via interpolação para exibir no input */}
 
             <div className="grid grid-cols-2 gap-2">
-              <PropertyRow label="Position X" activeColor={activeHex}>
+              <PropertyRow label="Position X" activeColor={activeHex} keyframeNow={isPositionKNow}>
                 <input 
                   type="number" 
                   min="-4000"
@@ -149,7 +149,7 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 />
               </PropertyRow>
 
-              <PropertyRow label="Position Y" activeColor={activeHex}>
+              <PropertyRow label="Position Y" activeColor={activeHex} keyframeNow={isPositionKNow}>
                 <input 
                   type="number" 
                   min="-4000"
@@ -976,6 +976,7 @@ const resolveColor = (input: string): string => {
   const isVolumeKNow = checkKeyframeNow('volume');
   const isOpacityKNow = checkKeyframeNow('opacity');
   const isSpeedKNow = checkKeyframeNow('speed');
+  const isPositionKNow = checkKeyframeNow('position');
 
   // 2. Defina os valores interpolados
   const opacity = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'opacity');
@@ -1094,6 +1095,7 @@ const resolveColor = (input: string): string => {
                   isAudio={isAudio}
                   speedState={speedState}
                   isSpeedKNow={isSpeedKNow}
+                  isPositionKNow={isPositionKNow}
 
 
                 
