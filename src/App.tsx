@@ -666,7 +666,7 @@ const matchShortcut = (e: KeyboardEvent, id: string): boolean => {
   const altOk   = mods.includes('Alt')   === e.altKey;
   const shiftOk = mods.includes('Shift') === e.shiftKey;
   const mainKey = e.key === ' ' ? 'Space' : e.key === 'Enter' ? 'Enter' : e.key.toUpperCase();
-  return ctrlOk && altOk && shiftOk && mainKey === main.toUpperCase();
+  return ctrlOk && altOk && shiftOk &&  mainKey === main;
 };
 
 // Load shortcuts from disk on startup
