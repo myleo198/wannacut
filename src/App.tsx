@@ -64,7 +64,8 @@ import {
   ArrowBigUpDash,
   ArrowUp,
   Underline,
-  Bell
+  Bell,
+  Keyboard
   
 } from 'lucide-react';
 
@@ -74,6 +75,8 @@ import { getDrawFrameFunction, exportVideo, RenderEngineContext } from './render
 import { SettingsModal } from './components/SettingsModal';
 import { PropertiesAside } from '@/components/PropertiesAside';
 import { ItensAside } from './components/ItensAside';
+import { ShortcutsModal, DEFAULT_SHORTCUTS } from './components/ShortcutsModal';
+import type { ShortcutEntry } from './components/ShortcutsModal';
 
 
 
@@ -643,6 +646,36 @@ const [wannacutSettings, setwannacutSettings] = useState({
   gpu: null,
   shortcuts: ''
 });
+
+// ─── Shortcuts system ────────────────────────────────────────────────────────
+const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>(DEFAULT_SHORTCUTS);
+const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+/** Returns the key combo for a given shortcut id */
+const getShortcut = (id: string): ShortcutEntry['keys'] =>
+  shortcuts.find(s => s.id === id)?.keys ?? [];
+
+/** True if a KeyboardEvent matches the stored combo for an id */
+const matchShortcut = (e: KeyboardEvent, id: string): boolean => {
+  const keys = getShortcut(id);
+  if (keys.length === 0) return false;
+  const mods = keys.filter(k => ['Ctrl','Alt','Shift'].includes(k));
+  const main = keys.find(k  => !['Ctrl','Alt','Shift'].includes(k)) ?? '';
+  const ctrlOk  = mods.includes('Ctrl')  === (e.ctrlKey  || e.metaKey);
+  const altOk   = mods.includes('Alt')   === e.altKey;
+  const shiftOk = mods.includes('Shift') === e.shiftKey;
+  const mainKey = e.key === ' ' ? 'Space' : e.key === 'Enter' ? 'Enter' : e.key.toUpperCase();
+  return ctrlOk && altOk && shiftOk && mainKey === main.toUpperCase();
+};
+
+// Load shortcuts from disk on startup
+useEffect(() => {
+  const folder = localStorage.getItem('wannacut_settings_folder');
+  if (!folder) return;
+  invoke<string>('read_settings_file', { path: `${folder}/shortcuts.json` })
+    .then(raw => setShortcuts(JSON.parse(raw)))
+    .catch(() => {}); // silently fall back to defaults
+}, []);
 
 // Efeito para validar a pasta de configurações ao abrir o app
 useEffect(() => {
@@ -2853,103 +2886,80 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
         handleDeleteEverything();
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      startExport();
-    }
+      if (matchShortcut(e, 'export')) {
+        e.preventDefault();
+        startExport();
+      }
 
-
-
-        // Undo: Ctrl+Z or Cmd+Z
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        // Undo
+        if (matchShortcut(e, 'undo')) {
           e.preventDefault();
           handleUndo();
         }
 
-        // Redo: Ctrl+Y / Cmd+Shift+Z / Ctrl+Shift+Z
-        if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+        // Redo (keep Ctrl+Shift+Z as universal fallback)
+        if (matchShortcut(e, 'redo') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z')) {
           e.preventDefault();
           handleRedo();
         }
 
-
-        // CTRL + T (Toggle Snap)
-        if (e.ctrlKey && e.key.toLowerCase() === 't') {
+        // Toggle Snap
+        if (matchShortcut(e, 'snap_toggle')) {
           e.preventDefault();
           setIsSnapEnabled(prev => !prev);
           showNotify(`Magnetic Snap: ${!isSnapEnabled ? 'ON' : 'OFF'}`, "success");
         }
 
-
-        //ALT + S split tool
-        if (e.altKey && e.key.toLowerCase() === 's') {
+        // Split
+        if (matchShortcut(e, 'split')) {
           e.preventDefault();
           handleSplit();
         }
 
-        
-    
-        
-
-
-     
-        // Ctrl + Q (Select Left)
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'q') {
+        // Select Left
+        if (matchShortcut(e, 'select_left')) {
           e.preventDefault();
           handleMassSplitAndSelect('left');
         }
 
-        // Ctrl + W (Select Right)
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') {
+        // Select Right
+        if (matchShortcut(e, 'select_right')) {
           e.preventDefault();
           handleMassSplitAndSelect('right');
         }
 
-
-
-        // Ctrl + C
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        // Copy
+        if (matchShortcut(e, 'copy')) {
           e.preventDefault();
           handleCopy();
         }
 
-        // Ctrl + V
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        // Paste
+        if (matchShortcut(e, 'paste')) {
           e.preventDefault();
           handlePaste();
         }
 
-
-        if (e.ctrlKey) {
-      
-        // Ctrl + > (Tecla de Ponto '.')
-        if (e.code === 'Period') {
-          e.preventDefault(); // Evita comportamentos padrão do navegador/WebView
+        // Next / prev cut
+        if (matchShortcut(e, 'next_cut')) {
+          e.preventDefault();
           seekToNearestCut(1);
-        }
-        
-        // Ctrl + < (Tecla de Vírgula ',')
-        else if (e.code === 'Comma') {
+        } else if (matchShortcut(e, 'prev_cut')) {
           e.preventDefault();
           seekToNearestCut(-1);
         }
-      }
 
-
-       if (e.altKey && e.code === 'Period') {
-          e.preventDefault(); // Evita comportamentos padrão do navegador/WebView
-          seekTo(currentTimeRef.current + 0.01)
-        }
-        
-        // Ctrl + < (Tecla de Vírgula ',')
-        if (e.altKey && e.code === 'Comma') {
+        // Frame step
+        if (matchShortcut(e, 'frame_forward')) {
           e.preventDefault();
-          seekTo(currentTimeRef.current - 0.01)
-          
+          seekTo(currentTimeRef.current + 0.01);
+        }
+        if (matchShortcut(e, 'frame_back')) {
+          e.preventDefault();
+          seekTo(currentTimeRef.current - 0.01);
         }
 
-        if(!isMouseOverSource && e.code === 'Space')
-        {
+        if (!isMouseOverSource && e.code === 'Space') {
           e.preventDefault();
           togglePlay();
         }  
@@ -2963,7 +2973,7 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedClipIds, selectedAssets , clips, isSnapEnabled, assets, history, redoStack, isMouseOverSource, sourceAsset, inPoint, outPoint]);
+    }, [selectedClipIds, selectedAssets , clips, isSnapEnabled, assets, history, redoStack, isMouseOverSource, sourceAsset, inPoint, outPoint, shortcuts]);
 
 
 
@@ -5267,8 +5277,9 @@ return (
 
 
           <div>
-
+          <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Set Shortcuts' onClick={() => setIsShortcutsOpen(true)}><Keyboard size={20}/></button>
           <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" onClick={() => setIsSettingsOpen(true)}><Settings size={20} /></button>
+          
           <button 
             onClick={() => {
               notifyRef.current?.toggle();
@@ -5368,6 +5379,8 @@ return (
             >
               <Youtube size={14} /> Download
             </button>
+
+            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Set Shortcuts' onClick={() => setIsShortcutsOpen(true)}><Keyboard size={16}/></button>
             <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Post in social media'><Share2 size={16}/></button>
             <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Settings' onClick={() => setIsSettingsOpen(true)}><Settings size={16}/></button>
             <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Export video' onClick={()=> { startExport();}}><Import size={16}/></button>
@@ -6661,6 +6674,7 @@ return (
               className={`w-full py-4 rounded-xl font-black text-xs text-white ${isDownloading ? 'bg-zinc-800' : 'bg-rose-700 hover:bg-rose-800'}`}>
               {isDownloading ? "DOWNLOADING..." : "FETCH MEDIA"}
             </button>
+            
             <button onClick={() => setIsImportModalOpen(false)} className="w-full mt-4 text-[10px] text-zinc-500 font-bold uppercase"> Close </button>
           </motion.div>
         </div>
@@ -6762,6 +6776,13 @@ return (
   <Notifications 
   ref={notifyRef} 
   onNewNotifications={(has) => setHasNewMessages(has)} 
+  />
+
+  <ShortcutsModal
+    isOpen={isShortcutsOpen}
+    onClose={() => setIsShortcutsOpen(false)}
+    settingsFolder={settingsFolder}
+    onShortcutsChange={(updated) => setShortcuts(updated)}
   />
   </div>
 );

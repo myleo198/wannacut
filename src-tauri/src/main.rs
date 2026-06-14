@@ -14,27 +14,23 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-
 use std::fs;
 use std::path::PathBuf;
 
-use tauri::command;
 use std::process::Command;
+use tauri::command;
 
-use std::thread;
 use std::fs::File;
-use tiny_http::{Server, Response, Header};
 use std::io::{Read, Seek, SeekFrom};
+use std::thread;
+use tiny_http::{Header, Response, Server};
 
 use std::path::Path;
 
-
-use tauri_plugin_shell::ShellExt;
 use std::process::Stdio;
+use tauri_plugin_shell::ShellExt;
 
 use std::io::Write;
-
-
 
 use std::process::Child;
 use std::sync::Mutex;
@@ -45,27 +41,21 @@ use tauri_plugin_shell::process::CommandChild;
 
 use serde_json::json;
 
-
-
 //  Updated state to hold the Tauri Sidecar CommandChild
 pub struct ExportState(pub Mutex<Option<CommandChild>>);
-
 
 #[derive(serde::Serialize)]
 struct Project {
     name: String,
     path: String,
-    thumbnail: Option<String>, 
-
+    thumbnail: Option<String>,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Dimensions {
-    pub x: f64, 
+    pub x: f64,
     pub y: f64,
 }
-
 
 #[derive(serde::Serialize)]
 pub struct VideoMetadata {
@@ -105,18 +95,17 @@ pub struct Clip {
     pub mute: Option<bool>,
     pub fadein: Option<f64>,
     pub fadeout: Option<f64>,
-    pub fadeinAudio: Option<f64>, 
+    pub fadeinAudio: Option<f64>,
     pub fadeoutAudio: Option<f64>,
-    
+
     // Opcional: para suportar a nova estrutura de keyframes
     pub keyframes: Option<Keyframes>,
-    
+
     #[serde(rename = "activeKeyframeView")]
     pub active_keyframe_view: Option<String>,
 }
 
 use tauri::Emitter; // Adicione este import no topo
-
 
 // 1. Você PRECISA desta struct definida para os erros E0425 sumirem
 #[derive(Serialize, Deserialize, Clone)]
@@ -128,9 +117,8 @@ pub struct Notification {
     pub image: Option<String>,
     pub link: Option<String>,
     pub link_text: Option<String>,
-    pub repeat: bool
+    pub repeat: bool,
 }
-
 
 #[derive(Deserialize)]
 struct EffectsData {
@@ -141,7 +129,7 @@ struct EffectsData {
 struct Effect {
     id: String,
     file: String,
-    plan: String
+    plan: String,
 }
 
 struct FontsData {
@@ -152,7 +140,7 @@ struct FontsData {
 struct Fonts {
     id: String,
     file: String,
-    plan: String
+    plan: String,
 }
 
 #[tauri::command]
@@ -162,20 +150,22 @@ async fn check_notifications(settings_path: String) -> Result<Vec<Notification>,
     // 2. Usando o reqwest que você acabou de adicionar
     let url = "https://wannacut.app/notifications.json";
     let client = reqwest::Client::new();
-    
+
     // Especificamos que o erro vindo do reqwest é um reqwest::Error para o compilador não se perder
-    let response = client.get(url)
+    let response = client
+        .get(url)
         .header("User-Agent", "WannaCut-App")
         .send()
         .await
         .map_err(|e: reqwest::Error| e.to_string())?;
-    
-    let data: serde_json::Value = response.json()
+
+    let data: serde_json::Value = response
+        .json()
         .await
         .map_err(|e: reqwest::Error| e.to_string())?;
-        
-    let remote_msgs: Vec<Notification> = serde_json::from_value(data["messages"].clone())
-        .unwrap_or_default();
+
+    let remote_msgs: Vec<Notification> =
+        serde_json::from_value(data["messages"].clone()).unwrap_or_default();
 
     // 3. Lógica de leitura do arquivo local
     let seen_ids: Vec<String> = if path.exists() {
@@ -204,8 +194,6 @@ async fn check_notifications(settings_path: String) -> Result<Vec<Notification>,
     Ok(to_show)
 }
 
-
-
 #[derive(Serialize)]
 struct ExportPayload {
     export_path: String,
@@ -214,7 +202,7 @@ struct ExportPayload {
     clips: Vec<Clip>,
 }
 
-use tauri::{ Runtime}; // Certifique-se de usar Emitter no Tauri v2
+use tauri::Runtime; // Certifique-se de usar Emitter no Tauri v2
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProjectSettings {
@@ -228,21 +216,24 @@ pub struct ProjectSettings {
     sample_rate: u32,
 }
 
-
 #[tauri::command]
 async fn get_asset_dimensions(path: String) -> Result<Dimensions, String> {
     let path_obj = Path::new(&path);
-    
-    let extension = path_obj.extension()
+
+    let extension = path_obj
+        .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_lowercase())
         .ok_or("Arquivo sem extensão válida")?;
 
     // --- LÓGICA PARA IMAGENS ---
     if ["jpg", "jpeg", "png", "webp", "bmp"].contains(&extension.as_str()) {
-        let img = image::image_dimensions(&path)
-            .map_err(|e| format!("Erro ao ler imagem: {}", e))?;
-        return Ok(Dimensions { x: img.0 as f64, y: img.1 as f64 });
+        let img =
+            image::image_dimensions(&path).map_err(|e| format!("Erro ao ler imagem: {}", e))?;
+        return Ok(Dimensions {
+            x: img.0 as f64,
+            y: img.1 as f64,
+        });
     }
 
     // --- LÓGICA PARA VÍDEOS (Via OpenCV) ---
@@ -250,10 +241,14 @@ async fn get_asset_dimensions(path: String) -> Result<Dimensions, String> {
     // --- LÓGICA PARA VÍDEOS (Via FFmpeg) ---
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=p=0",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
             &path,
         ])
         .output()
@@ -266,21 +261,28 @@ async fn get_asset_dimensions(path: String) -> Result<Dimensions, String> {
         return Err("Não foi possível determinar as dimensões do vídeo".to_string());
     }
 
-    let width: f64 = parts[0].parse().map_err(|e| format!("Erro ao parsear width: {}", e))?;
-    let height: f64 = parts[1].parse().map_err(|e| format!("Erro ao parsear height: {}", e))?;
+    let width: f64 = parts[0]
+        .parse()
+        .map_err(|e| format!("Erro ao parsear width: {}", e))?;
+    let height: f64 = parts[1]
+        .parse()
+        .map_err(|e| format!("Erro ao parsear height: {}", e))?;
 
     if width == 0.0 || height == 0.0 {
         return Err("Não foi possível determinar as dimensões do vídeo".to_string());
     }
 
-    Ok(Dimensions { x: width, y: height })
+    Ok(Dimensions {
+        x: width,
+        y: height,
+    })
 }
 
 #[tauri::command]
 async fn create_project_setup(
-    root_path: String, 
-    project_name: String, 
-    config: ProjectSettings
+    root_path: String,
+    project_name: String,
+    config: ProjectSettings,
 ) -> Result<String, String> {
     let mut project_path = PathBuf::from(&root_path);
     project_path.push(&project_name);
@@ -288,9 +290,8 @@ async fn create_project_setup(
     if project_path.exists() {
         return Err("A project with this name already exists in this folder.".into());
     }
-    
-    fs::create_dir_all(&project_path)
-        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    fs::create_dir_all(&project_path).map_err(|e| format!("Failed to create directory: {}", e))?;
 
     let mut config_file = project_path.clone();
     config_file.push("projectConfig.json");
@@ -303,7 +304,6 @@ async fn create_project_setup(
 
     println!("🚀 New project initialized at: {:?}", project_path);
 
-
     std::fs::create_dir_all(&project_path).map_err(|e| e.to_string())?;
     std::fs::create_dir(project_path.join("videos")).map_err(|e| e.to_string())?;
     std::fs::create_dir(project_path.join("exports")).map_err(|e| e.to_string())?;
@@ -311,20 +311,20 @@ async fn create_project_setup(
     Ok(project_path.to_string_lossy().into_owned())
 }
 
-
 #[tauri::command]
 async fn save_project_config(path: String, config: ProjectSettings) -> Result<String, String> {
     let current_dir = PathBuf::from(&path);
-    let parent_dir = current_dir.parent()
+    let parent_dir = current_dir
+        .parent()
         .ok_or("Não foi possível encontrar a pasta pai")?;
-    
+
     let new_dir = parent_dir.join(&config.name);
 
     let mut config_file_path = current_dir.clone();
     config_file_path.push("projectConfig.json");
 
-    let json_content = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Erro ao gerar JSON: {}", e))?;
+    let json_content =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Erro ao gerar JSON: {}", e))?;
 
     fs::write(&config_file_path, json_content)
         .map_err(|e| format!("Erro ao gravar projectConfig.json: {}", e))?;
@@ -334,10 +334,7 @@ async fn save_project_config(path: String, config: ProjectSettings) -> Result<St
             return Err("Already exist a project with this name!".into());
         }
 
-        fs::rename(&current_dir, &new_dir)
-            .map_err(|e| format!("Err to rename project: {}", e))?;
-        
-        
+        fs::rename(&current_dir, &new_dir).map_err(|e| format!("Err to rename project: {}", e))?;
     }
 
     // Retornamos o NOVO caminho da pasta para o Frontend atualizar o estado
@@ -375,8 +372,6 @@ async fn load_project_config(path: String) -> Result<ProjectSettings, String> {
     Ok(settings)
 }
 
-
-
 #[tauri::command]
 async fn export_video(
     app_handle: tauri::AppHandle,
@@ -387,8 +382,6 @@ async fn export_video(
     project_dimensions: serde_json::Value,
     clips: serde_json::Value,
 ) -> Result<(), String> {
-    
-
     // 1. Criar o objeto de configuração
 
     let config_data = serde_json::json!({
@@ -401,7 +394,7 @@ async fn export_video(
 
     // 2. Definir o caminho do JSON dentro da pasta do projeto
     let project_dir = std::path::PathBuf::from(&project_path);
-    
+
     // Garante que a pasta do projeto existe
     if !project_dir.exists() {
         return Err(format!("A pasta do projeto não existe: {}", project_path));
@@ -412,7 +405,7 @@ async fn export_video(
     // 3. Salvar/Sobrescrever o JSON
     let json_string = serde_json::to_string_pretty(&config_data)
         .map_err(|e| format!("Erro ao serializar JSON: {}", e))?;
-    
+
     std::fs::write(&config_path, json_string)
         .map_err(|e| format!("Erro ao gravar export_config.json no projeto: {}", e))?;
 
@@ -442,7 +435,7 @@ async fn export_video(
                     let raw = String::from_utf8_lossy(&line_bytes);
                     for line in raw.lines() {
                         let line = line.trim();
-                        
+
                         if line.contains("PERCENT:") {
                             if let Some(val_str) = line.split("PERCENT:").last() {
                                 if let Ok(percent) = val_str.parse::<u32>() {
@@ -469,20 +462,17 @@ async fn export_video(
     Ok(())
 }
 
-
 #[tauri::command]
 async fn cancel_export(state: State<'_, ExportState>) -> Result<(), String> {
     let mut lock = state.0.lock().unwrap();
     if let Some(child) = lock.take() {
         //  Kill the Tauri Sidecar process
-        child.kill().map_err(|e| format!("Failed to kill process: {}", e))?;
+        child
+            .kill()
+            .map_err(|e| format!("Failed to kill process: {}", e))?;
     }
     Ok(())
 }
-
-
-
-
 
 fn build_complex_filter(clips: &[Clip]) -> String {
     let mut filters = Vec::new();
@@ -506,8 +496,6 @@ fn build_complex_filter(clips: &[Clip]) -> String {
 
     filters.join(";")
 }
-
-
 
 #[tauri::command]
 fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
@@ -560,7 +548,6 @@ fn save_project_data(project_path: String, data: String, timestamp: u64) -> Resu
     Ok(())
 }
 
-
 #[tauri::command]
 fn list_fonts_new(path: String) -> Vec<String> {
     let mut fonts = Vec::new();
@@ -580,14 +567,16 @@ fn list_fonts_new(path: String) -> Vec<String> {
 async fn fetch_cloud_fonts() -> Result<serde_json::Value, String> {
     let url = "https://wannacut.app/fonts.json";
     let client = reqwest::Client::new();
-    
-    let response = client.get(url)
+
+    let response = client
+        .get(url)
         .header("User-Agent", "WannaCut-App")
         .send()
         .await
         .map_err(|e| e.to_string())?;
 
-    let json = response.json::<serde_json::Value>()
+    let json = response
+        .json::<serde_json::Value>()
         .await
         .map_err(|e| e.to_string())?;
 
@@ -599,7 +588,7 @@ async fn download_font_file(url: String, path: String) -> Result<(), String> {
     let client = reqwest::Client::new();
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
     let content = response.bytes().await.map_err(|e| e.to_string())?;
-    
+
     fs::write(path, content).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -609,7 +598,9 @@ fn list_fonts(fonts_path: String) -> Result<Vec<String>, String> {
     let mut fonts = Vec::new();
     let path = Path::new(&fonts_path);
 
-    if !path.exists() { return Ok(fonts); }
+    if !path.exists() {
+        return Ok(fonts);
+    }
 
     let entries = fs::read_dir(path).map_err(|e| e.to_string())?;
     for entry in entries.flatten() {
@@ -628,7 +619,7 @@ fn list_fonts(fonts_path: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 fn load_latest_project(project_path: String) -> Result<String, String> {
     let paths = fs::read_dir(project_path).map_err(|e| e.to_string())?;
-    
+
     // Filter files ending with .project and find the one with the highest timestamp in name
     let mut project_files: Vec<_> = paths
         .filter_map(|entry| entry.ok())
@@ -637,7 +628,7 @@ fn load_latest_project(project_path: String) -> Result<String, String> {
         .collect();
 
     project_files.sort(); // Sorts alphabetically/numerically
-    
+
     if let Some(latest) = project_files.last() {
         fs::read_to_string(latest).map_err(|e| e.to_string())
     } else {
@@ -660,7 +651,6 @@ fn load_specific_project(project_path: String, file_name: String) -> Result<Stri
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
-
 // Função para baixar o binário inicial se ele não existir
 async fn download_initial_binary(bin_path: &Path) -> Result<(), String> {
     println!("Binary not found. Starting download of official yt-dlp...");
@@ -680,8 +670,8 @@ async fn download_initial_binary(bin_path: &Path) -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to download binary: {}", e))?;
 
-    let mut file = File::create(bin_path)
-        .map_err(|e| format!("Failed to create binary file: {}", e))?;
+    let mut file =
+        File::create(bin_path).map_err(|e| format!("Failed to create binary file: {}", e))?;
 
     file.write_all(&content)
         .map_err(|e| format!("Failed to write binary to disk: {}", e))?;
@@ -698,8 +688,6 @@ async fn download_initial_binary(bin_path: &Path) -> Result<(), String> {
     println!("yt-dlp download completed successfully.");
     Ok(())
 }
-
-
 
 // Função para atualizar o yt-dlp existente
 async fn update_ytdlp(bin_path: &Path) -> Result<(), String> {
@@ -719,16 +707,21 @@ async fn update_ytdlp(bin_path: &Path) -> Result<(), String> {
 
 #[tauri::command]
 async fn download_youtube_video(
-    project_path: String, 
-    settings_folder: String, 
-    url: String
+    app_handle: tauri::AppHandle,
+    project_path: String,
+    settings_folder: String,
+    url: String,
 ) -> Result<String, String> {
     // 1. Configuração de caminhos
     let mut download_path = PathBuf::from(&project_path);
     download_path.push("videos");
 
     let bin_dir = PathBuf::from(&settings_folder).join("bin");
-    let bin_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
+    let bin_name = if cfg!(target_os = "windows") {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    };
     let bin_path = bin_dir.join(bin_name);
 
     // 2. Garantir que as pastas existam
@@ -744,23 +737,62 @@ async fn download_youtube_video(
         download_initial_binary(&bin_path).await?;
     }
 
-    // 4. Definição do comando de download
-    let run_download = |path_to_bin: &Path| {
-        Command::new(path_to_bin)
+    // 4. Função auxiliar: roda yt-dlp com progresso em tempo real via stdout
+    let run_download_with_progress = |path_to_bin: &Path, app: &tauri::AppHandle| -> Result<std::process::Output, String> {
+        use std::io::BufRead;
+
+        let mut child = Command::new(path_to_bin)
             .args([
                 "--no-check-certificate",
                 "--prefer-free-formats",
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                 "--merge-output-format", "mp4",
+                "--newline",           // Cada linha de progresso separada (essencial para parsing)
+                "--progress",          // Garante saída de progresso
                 "-o", &format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()),
                 &url,
             ])
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Erro ao iniciar yt-dlp: {}", e))?;
+
+        // Lê stdout linha a linha para capturar o progresso
+        if let Some(stdout) = child.stdout.take() {
+            let app_clone = app.clone();
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    // yt-dlp emite linhas como: "[download]  42.3% of 123.45MiB at ..."
+                    if line.contains("[download]") && line.contains('%') {
+                        // Extrai o número antes do '%'
+                        if let Some(pct_str) = line.split('%').next() {
+                            let trimmed = pct_str.split_whitespace().last().unwrap_or("0");
+                            if let Ok(pct) = trimmed.parse::<f64>() {
+                                let pct_u32 = pct.clamp(0.0, 100.0) as u32;
+                                let _ = app_clone.emit("yt-download-progress", pct_u32);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Aguarda o processo terminar e coleta o resultado
+        let output = child.wait_with_output()
+            .map_err(|e| format!("Erro ao aguardar yt-dlp: {}", e))?;
+
+        // Emite 100% ao finalizar com sucesso
+        if output.status.success() {
+            let _ = app.emit("yt-download-progress", 100u32);
+        }
+
+        Ok(output)
     };
 
     // --- TENTATIVA 1 ---
-    let output = run_download(&bin_path).map_err(|e| format!("Erro ao iniciar yt-dlp: {}", e))?;
+    let output = run_download_with_progress(&bin_path, &app_handle)?;
 
     if output.status.success() {
         return Ok("Download completed successfully".into());
@@ -772,7 +804,7 @@ async fn download_youtube_video(
         update_ytdlp(&bin_path).await?;
 
         // TENTATIVA 2
-        let output_retry = run_download(&bin_path).map_err(|e| format!("Erro no retry: {}", e))?;
+        let output_retry = run_download_with_progress(&bin_path, &app_handle)?;
         if output_retry.status.success() {
             return Ok("Download successful after core update".into());
         } else {
@@ -784,14 +816,12 @@ async fn download_youtube_video(
     Err(format!("yt-dlp error: {}", stderr))
 }
 
-
 #[tauri::command]
 async fn generate_thumbnail(
     project_path: String,
     file_name: String,
-    time_seconds: f64
+    time_seconds: f64,
 ) -> Result<String, String> {
-
     let thumbnail_folder = std::path::Path::new(&project_path).join("thumbnails");
 
     // Create folder if does not exist
@@ -802,7 +832,9 @@ async fn generate_thumbnail(
     // Paths based on project structure
     let video_path = PathBuf::from(&project_path).join("videos").join(&file_name);
     let output_name = format!("{}-{}.png", file_name, time_seconds);
-    let output_path = PathBuf::from(&project_path).join("thumbnails").join(&output_name);
+    let output_path = PathBuf::from(&project_path)
+        .join("thumbnails")
+        .join(&output_name);
 
     // If the thumbnail already exists, skip generation to save resources
     if output_path.exists() {
@@ -813,11 +845,15 @@ async fn generate_thumbnail(
     // -ss: fast seek to timestamp / -i: input / -frames:v 1: capture one frame / -q:v 2: quality level
     let output = std::process::Command::new("ffmpeg")
         .args([
-            "-ss", &time_seconds.to_string(), // Seek to specific time
-            "-i", &video_path.to_string_lossy(), // Input source
-            "-frames:v", "1", // Grab exactly 1 frame
-            "-update", "1",   // ESSENTIAL: Specifies a single image output rather than a sequence
-            "-y",             // Overwrite if exists (prevents hanging on prompts)
+            "-ss",
+            &time_seconds.to_string(), // Seek to specific time
+            "-i",
+            &video_path.to_string_lossy(), // Input source
+            "-frames:v",
+            "1", // Grab exactly 1 frame
+            "-update",
+            "1",  // ESSENTIAL: Specifies a single image output rather than a sequence
+            "-y", // Overwrite if exists (prevents hanging on prompts)
             &output_path.to_string_lossy(), // Output path
         ])
         .output()
@@ -830,24 +866,26 @@ async fn generate_thumbnail(
     }
 }
 
-
-
 use serde_json::Value;
 use tauri_plugin_shell::process::CommandEvent;
-
 
 #[tauri::command]
 async fn get_video_frame(path: String, time_ms: f64) -> Result<String, String> {
     let time_secs = time_ms / 1000.0;
-    
+
     // FFmpeg extrai o frame como JPEG para stdout
     let output = Command::new("ffmpeg")
         .args([
-            "-ss", &format!("{:.3}", time_secs),
-            "-i", &path,
-            "-frames:v", "1",
-            "-f", "image2",
-            "-vcodec", "mjpeg",
+            "-ss",
+            &format!("{:.3}", time_secs),
+            "-i",
+            &path,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2",
+            "-vcodec",
+            "mjpeg",
             "pipe:1",
         ])
         .output()
@@ -861,24 +899,34 @@ async fn get_video_frame(path: String, time_ms: f64) -> Result<String, String> {
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
-
 /// Retorna um frame de preview em resolução reduzida (thumbnail rápida).
 /// Útil para scrubbing na timeline sem sobrecarregar o processo.
 /// `width` define a largura máxima do preview (altura é proporcional).
 #[tauri::command]
-async fn get_preview_frame(path: String, time_ms: f64, width: Option<u32>) -> Result<String, String> {
+async fn get_preview_frame(
+    path: String,
+    time_ms: f64,
+    width: Option<u32>,
+) -> Result<String, String> {
     let time_secs = time_ms / 1000.0;
     let preview_width = width.unwrap_or(320);
 
     let output = Command::new("ffmpeg")
         .args([
-            "-ss", &format!("{:.3}", time_secs),
-            "-i", &path,
-            "-frames:v", "1",
-            "-vf", &format!("scale={}:-1", preview_width),
-            "-f", "image2",
-            "-vcodec", "mjpeg",
-            "-q:v", "5",
+            "-ss",
+            &format!("{:.3}", time_secs),
+            "-i",
+            &path,
+            "-frames:v",
+            "1",
+            "-vf",
+            &format!("scale={}:-1", preview_width),
+            "-f",
+            "image2",
+            "-vcodec",
+            "mjpeg",
+            "-q:v",
+            "5",
             "pipe:1",
         ])
         .output()
@@ -892,19 +940,17 @@ async fn get_preview_frame(path: String, time_ms: f64, width: Option<u32>) -> Re
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
-
-
 #[tauri::command]
 async fn import_asset(project_path: String, file_path: String) -> Result<String, String> {
     let source = PathBuf::from(&file_path);
     let filename = source.file_name().ok_or("Invalid file name")?;
-    
+
     let mut target = PathBuf::from(&project_path);
     target.push("videos");
     target.push(filename);
 
     fs::copy(&source, &target).map_err(|e| e.to_string())?;
-    
+
     Ok(filename.to_string_lossy().into_owned())
 }
 
@@ -924,8 +970,6 @@ fn list_assets(project_path: String) -> Result<Vec<String>, String> {
     Ok(assets)
 }
 
-
-
 use std::time::SystemTime;
 
 // Certifique-se de que sua Struct Project tenha um campo para ordenação (não precisa ir para o frontend se não quiser)
@@ -935,7 +979,6 @@ struct ProjectWithTime {
     modified_time: SystemTime,
 }
 
-
 #[tauri::command]
 fn list_projects(root_path: String) -> Result<Vec<Project>, String> {
     let mut projects_with_time = Vec::new();
@@ -943,10 +986,11 @@ fn list_projects(root_path: String) -> Result<Vec<Project>, String> {
 
     for path in paths.flatten() {
         let project_path = path.path();
-        
+
         if project_path.is_dir() {
             // Data padrão: a data de modificação da própria pasta do projeto
-            let mut project_latest_time = path.metadata()
+            let mut project_latest_time = path
+                .metadata()
                 .and_then(|m| m.modified())
                 .unwrap_or(SystemTime::UNIX_EPOCH);
 
@@ -959,7 +1003,7 @@ fn list_projects(root_path: String) -> Result<Vec<Project>, String> {
 
                 for thumb_entry in thumb_entries.flatten() {
                     let p = thumb_entry.path();
-                    
+
                     if p.is_file() {
                         if let Ok(metadata) = thumb_entry.metadata() {
                             if let Ok(modified) = metadata.modified() {
@@ -995,14 +1039,10 @@ fn list_projects(root_path: String) -> Result<Vec<Project>, String> {
     projects_with_time.sort_by(|a, b| b.modified_time.cmp(&a.modified_time));
 
     // Extrai apenas os objetos `Project` de dentro da struct temporária para retornar ao frontend
-    let sorted_projects = projects_with_time
-        .into_iter()
-        .map(|p| p.project)
-        .collect();
+    let sorted_projects = projects_with_time.into_iter().map(|p| p.project).collect();
 
     Ok(sorted_projects)
 }
-
 
 #[tauri::command]
 fn delete_project(path: String) -> Result<(), String> {
@@ -1045,44 +1085,47 @@ async fn get_duration(path: String) -> Result<VideoMetadata, String> {
     // Command: ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 path
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             &path,
         ])
         .output()
         .map_err(|e| e.to_string())?;
 
     let duration_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let duration = duration_str.parse::<f64>().map_err(|_| "Failed to parse duration")?;
+    let duration = duration_str
+        .parse::<f64>()
+        .map_err(|_| "Failed to parse duration")?;
 
     Ok(VideoMetadata { duration })
 }
-
-
-
 
 use base64::{engine::general_purpose, Engine as _};
 
 #[tauri::command]
 async fn get_image_data(path: String) -> Result<String, String> {
     use std::fs;
-    
+
     // Lê os bytes brutos da imagem
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    
+
     // Converte para Base64 (estou assumindo que você usa a crate base64)
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     let b64 = general_purpose::STANDARD.encode(bytes);
-    
+
     // Detecta a extensão para o MIME type correto
-    let mime = if path.to_lowercase().ends_with(".png") { "image/png" } else { "image/jpeg" };
-    
+    let mime = if path.to_lowercase().ends_with(".png") {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+
     Ok(format!("data:{};base64,{}", mime, b64))
 }
-
-
-
 
 #[tauri::command]
 fn move_file(source: String, destination: String) -> Result<String, String> {
@@ -1102,20 +1145,21 @@ fn move_file(source: String, destination: String) -> Result<String, String> {
     }
 }
 
-
-
 #[tauri::command]
 async fn extract_audio(project_path: String, file_name: String) -> Result<String, String> {
     let video_path = Path::new(&project_path).join("videos").join(&file_name);
     let output_folder = Path::new(&project_path).join("extracted_audios");
-    
+
     // Create directory if it doesn't exist
     if !output_folder.exists() {
         fs::create_dir_all(&output_folder).map_err(|e| e.to_string())?;
     }
 
     // Output filename will be the same as input, but with .mp3 extension (for compatibility)
-    let audio_file_name = format!("{}.mp3", Path::new(&file_name).file_stem().unwrap().to_str().unwrap());
+    let audio_file_name = format!(
+        "{}.mp3",
+        Path::new(&file_name).file_stem().unwrap().to_str().unwrap()
+    );
     let output_path = output_folder.join(&audio_file_name);
 
     // If audio is already extracted, skip to improve performance
@@ -1144,17 +1188,16 @@ async fn extract_audio(project_path: String, file_name: String) -> Result<String
     }
 }
 
-
 #[tauri::command]
 async fn get_waveform_data(path: String, samples: usize) -> Result<Vec<f32>, String> {
     // Use ffmpeg to read audio and output raw data (f32)
     let output = Command::new("ffmpeg")
         .args([
-            "-i", &path,
-            "-ar", "8000",       // Reduce sample rate to 8kHz (sufficient for waveform visualization)
-            "-ac", "1",          // Convert to Mono
-            "-f", "f32le",       // Format as Float 32-bit Little Endian
-            "-",                 // Direct output to stdout
+            "-i", &path, "-ar",
+            "8000", // Reduce sample rate to 8kHz (sufficient for waveform visualization)
+            "-ac", "1", // Convert to Mono
+            "-f", "f32le", // Format as Float 32-bit Little Endian
+            "-",     // Direct output to stdout
         ])
         .output()
         .map_err(|e| e.to_string())?;
@@ -1165,12 +1208,14 @@ async fn get_waveform_data(path: String, samples: usize) -> Result<Vec<f32>, Str
         .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
         .collect();
 
-    if f32_data.is_empty() { return Ok(vec![]); }
+    if f32_data.is_empty() {
+        return Ok(vec![]);
+    }
 
     // Downsample the array to the desired number of 'samples' (e.g., 100 peaks per clip)
     let chunk_size = f32_data.len() / samples;
     let mut peaks = Vec::new();
-    
+
     for chunk in f32_data.chunks(chunk_size.max(1)) {
         // Calculate the absolute peak value for the current chunk
         let max = chunk.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
@@ -1180,13 +1225,10 @@ async fn get_waveform_data(path: String, samples: usize) -> Result<Vec<f32>, Str
     Ok(peaks)
 }
 
-
 #[tauri::command]
 fn copy_file(source: String, destination: String) -> Result<String, String> {
     let src_path = Path::new(&source);
     let dest_path = Path::new(&destination);
-
-    
 
     // Validate if the source exists before attempting to copy
     if !src_path.exists() {
@@ -1206,23 +1248,25 @@ async fn transfer_folder_content(old_path: String, new_path: String) -> Result<(
     let old_dir = Path::new(&old_path);
     let new_dir = Path::new(&new_path);
 
-    if !old_dir.exists() { return Ok(()); } // Nada para transferir
+    if !old_dir.exists() {
+        return Ok(());
+    } // Nada para transferir
 
     fs::create_dir_all(new_dir).map_err(|e| e.to_string())?;
 
     for entry in fs::read_dir(old_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let dest = new_dir.join(entry.file_name());
-        
+
         // Se for o arquivo de config ou pastas de assets, movemos
         if entry.path().is_dir() {
-             // Lógica simples de mover diretório
-             let mut options = fs_extra::dir::CopyOptions::new();
-             options.copy_inside = true;
-             fs_extra::dir::move_dir(&old_dir, &new_dir, &options)
+            // Lógica simples de mover diretório
+            let mut options = fs_extra::dir::CopyOptions::new();
+            options.copy_inside = true;
+            fs_extra::dir::move_dir(&old_dir, &new_dir, &options)
                 .map_err(|err| format!("Error in moving the directory: {}", err))?;
         } else {
-             fs::rename(entry.path(), dest).map_err(|e| e.to_string())?;
+            fs::rename(entry.path(), dest).map_err(|e| e.to_string())?;
         }
     }
     Ok(())
@@ -1230,9 +1274,12 @@ async fn transfer_folder_content(old_path: String, new_path: String) -> Result<(
 
 #[tauri::command]
 async fn get_system_gpus() -> Vec<String> {
-    // Exemplo usando detecção simples. 
+    // Exemplo usando detecção simples.
     // Em produção, você pode usar a crate 'wgpu' ou 'sysinfo'
-    vec!["NVIDIA GeForce RTX 3060".into(), "Intel Iris Xe Graphics".into()]
+    vec![
+        "NVIDIA GeForce RTX 3060".into(),
+        "Intel Iris Xe Graphics".into(),
+    ]
 }
 
 #[tauri::command]
@@ -1248,11 +1295,11 @@ async fn save_settings_file(path: String, content: String) -> Result<(), String>
 #[tauri::command]
 async fn init_workspace_structure(path: String) -> Result<(), String> {
     let base_path = Path::new(&path);
-    
+
     if !base_path.exists() {
         fs::create_dir_all(base_path).map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -1261,7 +1308,7 @@ async fn init_workspace_structure(path: String) -> Result<(), String> {
 async fn init_settings_structure(path: String) -> Result<(), String> {
     let base = Path::new(&path);
     let folders = ["effects", "transitions", "fonts", "presets"];
-    
+
     for folder in folders {
         let p = base.join(folder);
         if !p.exists() {
@@ -1270,8 +1317,6 @@ async fn init_settings_structure(path: String) -> Result<(), String> {
     }
     Ok(())
 }
-
-
 
 #[tauri::command]
 fn open_font_folder(path: String) -> Result<(), String> {
@@ -1311,8 +1356,6 @@ fn open_font_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
-
-
 #[tauri::command]
 async fn sync_video_effect(settings_folder: String, video_name: String) -> Result<String, String> {
     let effects_path = std::path::Path::new(&settings_folder).join("effects");
@@ -1332,7 +1375,7 @@ async fn sync_video_effect(settings_folder: String, video_name: String) -> Resul
     let url = format!("https://wannacut.app/assets/effects/{}", video_name);
     let client = reqwest::Client::new();
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
-    
+
     let content = response.bytes().await.map_err(|e| e.to_string())?;
     std::fs::write(&file_path, content).map_err(|e| e.to_string())?;
 
@@ -1340,235 +1383,253 @@ async fn sync_video_effect(settings_folder: String, video_name: String) -> Resul
 }
 
 
+#[tauri::command]
+fn send_notification_system(title: String, body: String) {
+    Command::new("notify-send")
+        .arg(&title)
+        .arg(&body)
+        .spawn()
+        .ok();
+}
+
 fn main() {
     thread::spawn(move || {
-    let server = Server::http("127.0.0.1:1234").unwrap();
-    for request in server.incoming_requests() {
-        let url = request.url().trim_start_matches('/');
-        let decoded_path = percent_encoding::percent_decode_str(url).decode_utf8_lossy().into_owned();
-        let path = Path::new(&decoded_path);
+        let server = Server::http("127.0.0.1:1234").unwrap();
+        for request in server.incoming_requests() {
+            let url = request.url().trim_start_matches('/');
+            let decoded_path = percent_encoding::percent_decode_str(url)
+                .decode_utf8_lossy()
+                .into_owned();
+            let path = Path::new(&decoded_path);
 
-        if path.exists() && path.is_file() {
-            let mut file = File::open(&path).unwrap();
-            let metadata = file.metadata().unwrap();
-            let file_size = metadata.len();
+            if path.exists() && path.is_file() {
+                let mut file = File::open(&path).unwrap();
+                let metadata = file.metadata().unwrap();
+                let file_size = metadata.len();
 
-            // Lógica de Range Header
-            let range_header = request.headers().iter()
-                .find(|h| h.field.as_str().to_ascii_lowercase() == "range")
-                .map(|h| h.value.as_str());
+                // Lógica de Range Header
+                let range_header = request
+                    .headers()
+                    .iter()
+                    .find(|h| h.field.as_str().to_ascii_lowercase() == "range")
+                    .map(|h| h.value.as_str());
 
-            let mut response = if let Some(range) = range_header {
-                // Parse range: "bytes=start-end"
-                let range = range.replace("bytes=", "");
-                let parts: Vec<&str> = range.split('-').collect();
-                let start = parts[0].parse::<u64>().unwrap_or(0);
-                let end = if parts.len() > 1 && !parts[1].is_empty() {
-                    parts[1].parse::<u64>().unwrap_or(file_size - 1)
+                let mut response = if let Some(range) = range_header {
+                    // Parse range: "bytes=start-end"
+                    let range = range.replace("bytes=", "");
+                    let parts: Vec<&str> = range.split('-').collect();
+                    let start = parts[0].parse::<u64>().unwrap_or(0);
+                    let end = if parts.len() > 1 && !parts[1].is_empty() {
+                        parts[1].parse::<u64>().unwrap_or(file_size - 1)
+                    } else {
+                        file_size - 1
+                    };
+
+                    let length = end - start + 1;
+                    file.seek(SeekFrom::Start(start)).unwrap();
+                    let mut buffer = vec![0; length as usize];
+                    file.read_exact(&mut buffer).unwrap();
+
+                    let mut res = Response::from_data(buffer).with_status_code(206);
+                    res.add_header(
+                        Header::from_bytes(
+                            &b"Content-Range"[..],
+                            format!("bytes {}-{}/{}", start, end, file_size).as_bytes(),
+                        )
+                        .unwrap(),
+                    );
+                    res
                 } else {
-                    file_size - 1
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer).unwrap();
+                    Response::from_data(buffer).with_status_code(200)
                 };
 
-                let length = end - start + 1;
-                file.seek(SeekFrom::Start(start)).unwrap();
-                let mut buffer = vec![0; length as usize];
-                file.read_exact(&mut buffer).unwrap();
+                // Headers Obrigatórios
+                response.add_header(
+                    Header::from_bytes(&b"Content-Type"[..], &b"audio/mpeg"[..]).unwrap(),
+                );
+                response.add_header(
+                    Header::from_bytes(&b"Access-Control-Allow-Origin\""[..], &b"*"[..]).unwrap(),
+                );
+                response
+                    .add_header(Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap());
 
-                let mut res = Response::from_data(buffer).with_status_code(206);
-                res.add_header(Header::from_bytes(&b"Content-Range"[..], 
-                    format!("bytes {}-{}/{}", start, end, file_size).as_bytes()).unwrap());
-                res
+                let _ = request.respond(response);
             } else {
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer).unwrap();
-                Response::from_data(buffer).with_status_code(200)
-            };
-
-            // Headers Obrigatórios
-            response.add_header(Header::from_bytes(&b"Content-Type"[..], &b"audio/mpeg"[..]).unwrap());
-            response.add_header(Header::from_bytes(&b"Access-Control-Allow-Origin\""[..], &b"*"[..]).unwrap());
-            response.add_header(Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap());
-
-            let _ = request.respond(response);
-        } else {
-            let _ = request.respond(Response::from_string("Not Found").with_status_code(404));
+                let _ = request.respond(Response::from_string("Not Found").with_status_code(404));
+            }
         }
-    }
-});
+    });
 
-// ---------------------------------------------------------------------------
-// ENGINE EXPORT: recebe frames PNG e WAV do frontend e monta o vídeo final
-// ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // ENGINE EXPORT: recebe frames PNG e WAV do frontend e monta o vídeo final
+    // ---------------------------------------------------------------------------
 
-/// Salva um frame PNG (base64) na pasta de frames temporários do projeto.
-/// Chamado a cada frame renderizado pelo motor Three.js no frontend.
-#[tauri::command]
-async fn save_export_frame(
-    project_path: String,
-    frame_index: u32,
-    png_base64: String,
-) -> Result<(), String> {
-    use base64::{engine::general_purpose, Engine as _};
+    /// Salva um frame PNG (base64) na pasta de frames temporários do projeto.
+    /// Chamado a cada frame renderizado pelo motor Three.js no frontend.
+    #[tauri::command]
+    async fn save_export_frame(
+        project_path: String,
+        frame_index: u32,
+        png_base64: String,
+    ) -> Result<(), String> {
+        use base64::{engine::general_purpose, Engine as _};
 
-    let frames_dir = std::path::Path::new(&project_path).join("export_frames");
-    std::fs::create_dir_all(&frames_dir)
-        .map_err(|e| format!("Erro ao criar pasta de frames: {}", e))?;
+        let frames_dir = std::path::Path::new(&project_path).join("export_frames");
+        std::fs::create_dir_all(&frames_dir)
+            .map_err(|e| format!("Erro ao criar pasta de frames: {}", e))?;
 
-    let frame_path = frames_dir.join(format!("{:06}.png", frame_index));
+        let frame_path = frames_dir.join(format!("{:06}.png", frame_index));
 
-    let b64_data = png_base64.split(',').last().unwrap_or(&png_base64);
-    let bytes = general_purpose::STANDARD
-        .decode(b64_data)
-        .map_err(|e| format!("Erro ao decodificar base64 do frame {}: {}", frame_index, e))?;
+        let b64_data = png_base64.split(',').last().unwrap_or(&png_base64);
+        let bytes = general_purpose::STANDARD
+            .decode(b64_data)
+            .map_err(|e| format!("Erro ao decodificar base64 do frame {}: {}", frame_index, e))?;
 
-    std::fs::write(&frame_path, bytes)
-        .map_err(|e| format!("Erro ao salvar frame {}: {}", frame_index, e))?;
+        std::fs::write(&frame_path, bytes)
+            .map_err(|e| format!("Erro ao salvar frame {}: {}", frame_index, e))?;
 
-    Ok(())
-}
-
-
-
-
-/// Salva o WAV de áudio gerado pelo OfflineAudioContext do frontend.
-/// O frontend já faz todo o mix, efeitos e volume — o Rust só guarda o arquivo.
-#[tauri::command]
-async fn save_export_audio(
-    project_path: String,
-    wav_base64: String,
-) -> Result<(), String> {
-    use base64::{engine::general_purpose, Engine as _};
-
-    let audio_path = std::path::Path::new(&project_path).join("export_audio_mix.wav");
-
-    let b64_data = wav_base64.split(',').last().unwrap_or(&wav_base64);
-    let bytes = general_purpose::STANDARD
-        .decode(b64_data)
-        .map_err(|e| format!("Erro ao decodificar base64 do WAV: {}", e))?;
-
-    std::fs::write(&audio_path, bytes)
-        .map_err(|e| format!("Erro ao salvar WAV: {}", e))?;
-
-    Ok(())
-}
-
-/// Após todos os frames e o WAV serem salvos, monta o vídeo final com FFmpeg:
-///   1. PNGs → vídeo sem áudio
-///   2. Vídeo + WAV → arquivo final (ou só vídeo se não há WAV)
-///
-/// O frontend já fez todo o processamento de áudio (mix, efeitos, volume, posicionamento).
-/// O Rust apenas combina os dois streams com FFmpeg.
-
-
-
-#[tauri::command]
-async fn assemble_exported_video(
-    app_handle: tauri::AppHandle,
-    project_path: String,
-    target_path: String,
-    fps: u32,
-    duration: f64,
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    let proj = std::path::Path::new(&project_path);
-    let frames_dir = proj.join("export_frames");
-    let audio_wav_path = proj.join("export_audio_mix.wav");
-    let video_only_path = proj.join("export_video_only.mp4");
-    let frame_pattern = frames_dir.join("%06d.png");
-
-    // -----------------------------------------------------------------------
-    // PASSO 1: PNGs → vídeo sem áudio
-    // -----------------------------------------------------------------------
-    let step1 = app_handle
-        .shell()
-        .command("ffmpeg") // Corrigido para .command() minúsculo (comando global)
-        .args([
-            "-y",
-            "-framerate", &fps.to_string(),
-            "-i", &frame_pattern.to_string_lossy(),
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-pix_fmt", "yuv420p",
-            "-vf", &format!("scale={}:{}", width, height),
-            &video_only_path.to_string_lossy(),
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("FFmpeg (frames→video) falhou: {}", e))?;
-
-    if !step1.status.success() {
-        return Err(format!(
-            "FFmpeg (frames→video) erro: {}",
-            String::from_utf8_lossy(&step1.stderr)
-        ));
+        Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // PASSO 2: Combina vídeo + WAV (ou só vídeo se não há áudio)
-    // O WAV já foi gerado pelo OfflineAudioContext no frontend com:
-    //   - posicionamento correto de cada clip (start, beginmoment, duration)
-    //   - todos os efeitos aplicados (pitch, alien, microphone)
-    //   - curva de volume com keyframes e fades
-    // -----------------------------------------------------------------------
-    let has_audio = audio_wav_path.exists();
+    /// Salva o WAV de áudio gerado pelo OfflineAudioContext do frontend.
+    /// O frontend já faz todo o mix, efeitos e volume — o Rust só guarda o arquivo.
+    #[tauri::command]
+    async fn save_export_audio(project_path: String, wav_base64: String) -> Result<(), String> {
+        use base64::{engine::general_purpose, Engine as _};
 
-    let mut final_args: Vec<String> = vec!["-y".into()];
-    final_args.push("-i".into());
-    final_args.push(video_only_path.to_string_lossy().to_string());
+        let audio_path = std::path::Path::new(&project_path).join("export_audio_mix.wav");
 
-    if has_audio {
+        let b64_data = wav_base64.split(',').last().unwrap_or(&wav_base64);
+        let bytes = general_purpose::STANDARD
+            .decode(b64_data)
+            .map_err(|e| format!("Erro ao decodificar base64 do WAV: {}", e))?;
+
+        std::fs::write(&audio_path, bytes).map_err(|e| format!("Erro ao salvar WAV: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Após todos os frames e o WAV serem salvos, monta o vídeo final com FFmpeg:
+    ///   1. PNGs → vídeo sem áudio
+    ///   2. Vídeo + WAV → arquivo final (ou só vídeo se não há WAV)
+    ///
+    /// O frontend já fez todo o processamento de áudio (mix, efeitos, volume, posicionamento).
+    /// O Rust apenas combina os dois streams com FFmpeg.
+
+    #[tauri::command]
+    async fn assemble_exported_video(
+        app_handle: tauri::AppHandle,
+        project_path: String,
+        target_path: String,
+        fps: u32,
+        duration: f64,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let proj = std::path::Path::new(&project_path);
+        let frames_dir = proj.join("export_frames");
+        let audio_wav_path = proj.join("export_audio_mix.wav");
+        let video_only_path = proj.join("export_video_only.mp4");
+        let frame_pattern = frames_dir.join("%06d.png");
+
+        // -----------------------------------------------------------------------
+        // PASSO 1: PNGs → vídeo sem áudio
+        // -----------------------------------------------------------------------
+        let step1 = app_handle
+            .shell()
+            .command("ffmpeg") // Corrigido para .command() minúsculo (comando global)
+            .args([
+                "-y",
+                "-framerate",
+                &fps.to_string(),
+                "-i",
+                &frame_pattern.to_string_lossy(),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-vf",
+                &format!("scale={}:{}", width, height),
+                &video_only_path.to_string_lossy(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("FFmpeg (frames→video) falhou: {}", e))?;
+
+        if !step1.status.success() {
+            return Err(format!(
+                "FFmpeg (frames→video) erro: {}",
+                String::from_utf8_lossy(&step1.stderr)
+            ));
+        }
+
+        // -----------------------------------------------------------------------
+        // PASSO 2: Combina vídeo + WAV (ou só vídeo se não há áudio)
+        // O WAV já foi gerado pelo OfflineAudioContext no frontend com:
+        //   - posicionamento correto de cada clip (start, beginmoment, duration)
+        //   - todos os efeitos aplicados (pitch, alien, microphone)
+        //   - curva de volume com keyframes e fades
+        // -----------------------------------------------------------------------
+        let has_audio = audio_wav_path.exists();
+
+        let mut final_args: Vec<String> = vec!["-y".into()];
         final_args.push("-i".into());
-        final_args.push(audio_wav_path.to_string_lossy().to_string());
-        final_args.push("-c:v".into());
-        final_args.push("copy".into());
-        final_args.push("-c:a".into());
-        final_args.push("aac".into());
-        final_args.push("-b:a".into());
-        final_args.push("192k".into());
-        final_args.push("-t".into());
-        final_args.push(format!("{:.6}", duration));
-    } else {
-        final_args.push("-c".into());
-        final_args.push("copy".into());
+        final_args.push(video_only_path.to_string_lossy().to_string());
+
+        if has_audio {
+            final_args.push("-i".into());
+            final_args.push(audio_wav_path.to_string_lossy().to_string());
+            final_args.push("-c:v".into());
+            final_args.push("copy".into());
+            final_args.push("-c:a".into());
+            final_args.push("aac".into());
+            final_args.push("-b:a".into());
+            final_args.push("192k".into());
+            final_args.push("-t".into());
+            final_args.push(format!("{:.6}", duration));
+        } else {
+            final_args.push("-c".into());
+            final_args.push("copy".into());
+        }
+
+        final_args.push(target_path.clone());
+
+        let step2 = app_handle
+            .shell()
+            .command("ffmpeg") // Corrigido de .sidecar() para .command() global
+            .args(final_args) // O Tauri v2 consome o Vec<String> diretamente aqui
+            .output()
+            .await
+            .map_err(|e| format!("FFmpeg (mux final) falhou: {}", e))?;
+
+        if !step2.status.success() {
+            return Err(format!(
+                "FFmpeg (mux final) erro: {}",
+                String::from_utf8_lossy(&step2.stderr)
+            ));
+        }
+
+        // -----------------------------------------------------------------------
+        // LIMPEZA
+        // -----------------------------------------------------------------------
+        let _ = std::fs::remove_dir_all(&frames_dir);
+        let _ = std::fs::remove_file(&video_only_path);
+        let _ = std::fs::remove_file(&audio_wav_path);
+
+        // Emissão do progresso final para o frontend
+        let _ = app_handle.emit("export-progress", 100u32);
+
+        Ok(())
     }
-
-    final_args.push(target_path.clone());
-
-    let step2 = app_handle
-        .shell()
-        .command("ffmpeg") // Corrigido de .sidecar() para .command() global
-        .args(final_args)  // O Tauri v2 consome o Vec<String> diretamente aqui
-        .output()
-        .await
-        .map_err(|e| format!("FFmpeg (mux final) falhou: {}", e))?;
-
-    if !step2.status.success() {
-        return Err(format!(
-            "FFmpeg (mux final) erro: {}",
-            String::from_utf8_lossy(&step2.stderr)
-        ));
-    }
-
-    // -----------------------------------------------------------------------
-    // LIMPEZA
-    // -----------------------------------------------------------------------
-    let _ = std::fs::remove_dir_all(&frames_dir);
-    let _ = std::fs::remove_file(&video_only_path);
-    let _ = std::fs::remove_file(&audio_wav_path);
-
-    // Emissão do progresso final para o frontend
-    let _ = app_handle.emit("export-progress", 100u32);
-
-    Ok(())
-}
-
-
-
-
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init()) // Dialog plugin for system file pickers
@@ -1578,22 +1639,22 @@ async fn assemble_exported_video(
             save_export_frame,
             save_export_audio,
             assemble_exported_video,
-            list_projects, 
-            delete_project, 
-            import_asset, 
-            list_assets, 
-            download_youtube_video, 
-            load_latest_project, 
+            list_projects,
+            delete_project,
+            import_asset,
+            list_assets,
+            download_youtube_video,
+            load_latest_project,
             save_project_data,
-            list_project_files, 
-            read_specific_file, 
-            load_specific_project, 
-            rename_file, 
-            get_duration, 
-            generate_thumbnail, 
-            delete_file, 
-            get_video_frame, 
-            extract_audio, 
+            list_project_files,
+            read_specific_file,
+            load_specific_project,
+            rename_file,
+            get_duration,
+            generate_thumbnail,
+            delete_file,
+            get_video_frame,
+            extract_audio,
             get_waveform_data,
             export_video,
             cancel_export,
@@ -1603,8 +1664,8 @@ async fn assemble_exported_video(
             save_project_config,
             create_project_setup,
             get_asset_dimensions,
-            get_system_gpus, 
-            read_settings_file, 
+            get_system_gpus,
+            read_settings_file,
             save_settings_file,
             init_settings_structure,
             init_workspace_structure,
@@ -1616,8 +1677,8 @@ async fn assemble_exported_video(
             fetch_cloud_fonts,
             open_font_folder,
             sync_video_effect,
-            get_preview_frame
-           
+            get_preview_frame,
+            send_notification_system
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

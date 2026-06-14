@@ -2,14 +2,26 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Permissões corrigidas para Tauri v2",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "opener:default",
     "dialog:default",
     "shell:default",
     "shell:allow-execute",
-    "shell:allow-spawn",
+     {
+       "identifier": "shell:allow-spawn",
+        "allow": [
+          { 
+            "name": "notify-send",
+            "cmd": "/usr/bin/notify-send",
+            "args": [{ "validator": ".*" }, { "validator": ".*" }],
+            "sidecar": false
+          }
+        ]
+    },
     "fs:allow-read",
     "fs:allow-write",
     "fs:allow-exists",
@@ -18,20 +30,26 @@
     "fs:allow-appdata-read-recursive",
     "dialog:allow-confirm",
     "dialog:allow-message",
-    
+
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "*/**" }
+        {
+          "path": "*/**"
+        }
       ]
     },
     {
       "identifier": "fs:allow-write-file",
       "allow": [
-        { "path": "*/**" },
-        { "path": "*/**" }
+        {
+          "path": "*/**"
+        },
+        {
+          "path": "*/**"
+        }
       ]
-    }
-    
+    },
+    "notification:default"
   ]
 }

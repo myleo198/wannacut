@@ -527,6 +527,43 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
         </PropertyRow>
       )}
 
+
+      {/* REVERSE */}
+      
+        <div className="flex items-center justify-between px-1 mt-1">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Reverse</span>
+          <label className="relative flex items-center gap-2 cursor-pointer select-none">
+            <div className="relative">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={selectedClip?.reverse === -1}
+                onChange={(e) => {
+                  setClips(prev =>
+                    prev.map(c =>
+                      c.id === selectedClip.id
+                        ? { ...c, reverse: e.target.checked ? -1 : 1 }
+                        : c
+                    )
+                  );
+                }}
+              />
+              <div
+                className="w-8 h-4 rounded-full transition-colors duration-200 peer-checked:bg-indigo-600 bg-zinc-700 border border-white/10"
+                style={{ ...(selectedClip?.reverse === -1 ? { backgroundColor: activeHex } : {}) }}
+              />
+              <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 peer-checked:translate-x-4" />
+            </div>
+            <span
+              className="text-[9px] font-black uppercase tracking-widest transition-colors"
+              style={{ color: selectedClip?.reverse === -1 ? activeHex : undefined }}
+            >
+              {selectedClip?.reverse === -1 ? 'ON' : 'OFF'}
+            </span>
+          </label>
+        </div>
+      
+
           {/* ROTATION */}
           {(isVideo || isText || isImage) && 
           
