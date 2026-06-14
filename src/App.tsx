@@ -3442,6 +3442,32 @@ const audioRef2 = useRef<HTMLAudioElement>(null);
 const canvasRef2 = useRef<HTMLCanvasElement>(null);
 
 
+    // Helper: draw an image/frame centered with letterbox/pillarbox on the canvas
+    const drawCenteredOnCanvas2 = (img: HTMLImageElement) => {
+      const canvas = canvasRef2.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const CANVAS_W = 1280;
+      const CANVAS_H = 720;
+      canvas.width  = CANVAS_W;
+      canvas.height = CANVAS_H;
+
+      // Fill background black (letterbox / pillarbox bars)
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+      // Scale to fit keeping aspect ratio
+      const scale = Math.min(CANVAS_W / img.width, CANVAS_H / img.height);
+      const drawW = img.width  * scale;
+      const drawH = img.height * scale;
+      const offsetX = (CANVAS_W - drawW) / 2;
+      const offsetY = (CANVAS_H - drawH) / 2;
+
+      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+    };
+
     // Render Video Frame to Auxiliar Monitor
     const renderFrame2 = async (time: number) => {
     if (!canvasRef2.current) return;
@@ -3458,7 +3484,28 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
 
       
       if (!sourceAsset || !canvasRef2.current) return;
-      
+
+      const assetType = knowTypeByAssetName(sourceAsset.name);
+
+      // --- IMAGE: load directly via convertFileSrc, no frame extraction needed ---
+      if (assetType === 'image') {
+        try {
+          const filePath = `${currentProjectPath}/videos/${sourceAsset.name}`;
+          const url = convertFileSrc(filePath);
+          const img = new Image();
+          img.onload = () => drawCenteredOnCanvas2(img);
+          img.src = url;
+        } catch (_err) {
+          const ctx = canvasRef2.current?.getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, 0, 1280, 720);
+          }
+        }
+        return;
+      }
+
+      // --- VIDEO: extract frame via invoke, then draw centered ---
       try {
         // Busca o frame exato via invoke
         const frameBase64: string = await invoke("get_video_frame", { 
@@ -3468,23 +3515,15 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
 
 
        
-        const ctx = canvasRef2.current.getContext("2d");
         const img = new Image();
-        img.onload = () => {
-          if (ctx && canvasRef2.current) {
-
-            canvasRef2.current.width = img.width;
-            canvasRef2.current.height = img.height
-            ctx.drawImage(img, 0, 0);
-          }
-        };
+        img.onload = () => drawCenteredOnCanvas2(img);
         img.src = frameBase64;
       } catch (_err) {
         // On any frame error, just fill the canvas black — no console noise.
         const ctx = canvasRef2.current?.getContext("2d");
         if (ctx && canvasRef2.current) {
           ctx.fillStyle = "#000000";
-          ctx.fillRect(0, 0, canvasRef2.current.width || 1280, canvasRef2.current.height || 720);
+          ctx.fillRect(0, 0, 1280, 720);
         }
       }
     };
@@ -3499,6 +3538,21 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
       sourceDuration2.current = 0;
       setCurrentTime2(0);
       setIsPlaying2(false);
+
+      const assetType = knowTypeByAssetName(sourceAsset.name);
+
+      // --- IMAGE: render immediately, no duration/audio needed ---
+      if (assetType === 'image') {
+        hasAudio2.current = false;
+        sourceDuration2.current = 0;
+        // Draw it right away on the canvas
+        const filePath = `${currentProjectPath}/videos/${sourceAsset.name}`;
+        const url = convertFileSrc(filePath);
+        const img = new Image();
+        img.onload = () => drawCenteredOnCanvas2(img);
+        img.src = url;
+        return;
+      }
 
       // Busca duração real via invoke (funciona com ou sem áudio)
       const filePath = `${currentProjectPath}/videos/${sourceAsset.name}`;
@@ -3526,6 +3580,10 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
     // Sync Canvas — funciona com áudio ou sem (timer interno)
     useEffect(() => {
       if (!sourceAsset) return;
+
+      // Images are static — no playback loop needed
+      const assetType2 = knowTypeByAssetName(sourceAsset.name);
+      if (assetType2 === 'image') return;
 
       if (!isPlaying2) {
         if (audioRef2.current && hasAudio2.current) {
