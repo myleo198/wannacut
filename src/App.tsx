@@ -444,7 +444,10 @@ const notifyRef = useRef<NotificationsRef>(null); // A Ref que você já tem
 
 // Fechar menu ao clicar fora
 useEffect(() => {
-  const closeMenu = () => setShowContextMenu(null);
+  const closeMenu = () => {
+  setContextMenu(null);
+  setTrackContextMenu(null);
+};
   window.addEventListener('click', closeMenu);
   return () => window.removeEventListener('click', closeMenu);
 }, []);
@@ -971,6 +974,55 @@ useEffect(() =>
 //context menu of clips (right click mouse)
 
 const [contextMenu, setContextMenu] = useState<{ x: number, y: number, type: any, clip: Clip } | null>(null);
+const [trackContextMenu, setTrackContextMenu] = useState<{
+  x: number;
+  y: number;
+  trackId: number;
+  clickTime: number; // tempo em segundos onde o usuário clicou na track
+} | null>(null);
+
+
+
+const cleanEmptySpace = (trackId: number, clickTime: number) => {
+  // 1. Pega todos os clips da track, ordenados por start
+  const trackClips = clips
+    .filter(c => Number(c.trackId) === Number(trackId))
+    .sort((a, b) => a.start - b.start);
+
+  // 2. Acha o clip imediatamente ANTES do ponto clicado (que termina antes do click)
+  const clipBefore = [...trackClips]
+    .reverse()
+    .find(c => c.start + c.duration <= clickTime);
+
+  // 3. Define o "fim do clip anterior" — se não houver clip antes, o espaço começa em 0
+  const gapStart = clipBefore ? clipBefore.start + clipBefore.duration : 0;
+
+  // 4. Clips que estão DEPOIS do espaço clicado (começam após gapStart)
+  // e que de fato têm um gap (não estão colados no clipBefore)
+  const clipsAfter = trackClips.filter(c => c.start >= clickTime);
+
+  if (clipsAfter.length === 0) return; // nada para mover
+
+  // 5. O gap é a diferença entre o início do primeiro clip-depois e gapStart
+  const firstClipAfter = clipsAfter[0];
+  const gap = firstClipAfter.start - gapStart;
+
+  if (gap <= 0) return; // sem espaço real para limpar
+
+  // 6. Empurra todos os clips após o gap para trás pelo tamanho do gap
+  setClips(prev =>
+    prev.map(c => {
+      if (Number(c.trackId) === Number(trackId) && c.start >= firstClipAfter.start) {
+        return { ...c, start: c.start - gap };
+      }
+      return c;
+    })
+  );
+
+  showNotify(`Removed ${gap.toFixed(2)}s gap on track ${trackId + 1}`, 'success');
+};
+
+
 
 const handleContextMenu = (e: React.MouseEvent, type: any, clip: Clip) => {
   e.preventDefault(); // Impede o menu padrão do Windows/Browser
@@ -5983,7 +6035,7 @@ return (
         seekTo(currentTimeRef.current);
         setPlayheadPos(newPos);
         
-
+       
         
         
       }}
@@ -6095,6 +6147,25 @@ return (
         <div 
           onDragOver={handleDragOver}
           onDrop={(e) => handleDropOnTimeline(e, track.id)}
+          onContextMenu={(e) => {
+            // Só abre se clicou em área vazia (não em cima de um clip)
+            const target = e.target as HTMLElement;
+            if (target.closest('[draggable="true"]')) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const rect = e.currentTarget.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickTime = clickX / pixelsPerSecond;
+
+            setTrackContextMenu({
+              x: e.clientX,
+              y: e.clientY,
+              trackId: track.id,
+              clickTime,
+            });
+          }}
           className={`relative flex-1  border 
           rounded-md  
           transition-colors min-w-[10000px]
@@ -6129,6 +6200,38 @@ return (
           
 
         >
+
+
+          {/* Track Context Menu */}
+              {trackContextMenu && (() => {
+                const menuHeight = 60;
+                const menuWidth = 190;
+                const overflowY = trackContextMenu.y + menuHeight > window.innerHeight;
+                const overflowX = trackContextMenu.x + menuWidth > window.innerWidth;
+                const adjustedY = overflowY ? trackContextMenu.y - menuHeight : trackContextMenu.y;
+                const adjustedX = overflowX ? trackContextMenu.x - menuWidth : trackContextMenu.x;
+
+                return (
+                  <div
+                    className="fixed z-[200] min-w-[190px] bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-lg py-1.5 animate-in fade-in zoom-in duration-100"
+                    style={{ top: adjustedY, left: adjustedX }}
+                  >
+                    <button
+                      onClick={() => {
+                        cleanEmptySpace(trackContextMenu.trackId, trackContextMenu.clickTime);
+                        setTrackContextMenu(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
+                    >
+                      <BrushCleaning size={14} className="opacity-70" />
+                      <span>Clean Empty Space</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
+
+
           {/* Clips filtrados por track.id */}
           {clips.filter(c => Number(c.trackId) === Number(track.id)).map((clip) => {
             
