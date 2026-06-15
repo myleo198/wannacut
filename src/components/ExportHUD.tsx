@@ -11,11 +11,17 @@ interface ExportHUDProps {
   percent: number;
   kind: 'video' | 'audio' | null;
   onCancel: () => void;
+  projectName?: string;
 }
 
-export function ExportHUD({ isVisible, percent, kind, onCancel }: ExportHUDProps) {
+
+
+
+export function ExportHUD({ isVisible, percent, kind, onCancel, projectName }: ExportHUDProps) {
   const isAudio = kind === 'audio';
   const accentColor = isAudio ? 'fuchsia' : 'cyan';
+
+   
 
   return (
     <AnimatePresence>
@@ -25,7 +31,7 @@ export function ExportHUD({ isVisible, percent, kind, onCancel }: ExportHUDProps
           animate={{ opacity: 1, y: 0,   scale: 1    }}
           exit={{   opacity: 0, y: -12, scale: 0.95  }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="fixed top-4 right-4 z-[800] w-64 bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+          className="relative md:[position:unset] z-[800] w-64 bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
         >
           {/* Top accent line */}
           <div
@@ -36,14 +42,21 @@ export function ExportHUD({ isVisible, percent, kind, onCancel }: ExportHUDProps
           <div className="p-4 space-y-3">
             {/* Header row */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 {isAudio
-                  ? <Music size={13} className="text-fuchsia-400" />
-                  : <Film  size={13} className="text-cyan-400"    />
+                  ? <Music size={13} className="text-fuchsia-400 shrink-0" />
+                  : <Film  size={13} className="text-cyan-400 shrink-0"    />
                 }
-                <span className="text-[10px] font-black uppercase tracking-widest text-white">
-                  {isAudio ? 'Exporting Audio' : 'Exporting Video'}
-                </span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-white">
+                    {isAudio ? 'Exporting Audio' : 'Exporting Video'}
+                  </span>
+                  {projectName && (
+                    <span className="text-[9px] text-zinc-500 font-medium truncate max-w-[120px]" title={projectName}>
+                      {projectName}
+                    </span>
+                  )}
+                </div>
               </div>
               <span className={`text-[10px] font-mono font-bold ${isAudio ? 'text-fuchsia-400' : 'text-cyan-400'}`}>
                 {percent}%

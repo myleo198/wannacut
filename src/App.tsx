@@ -83,7 +83,7 @@ import type { ShortcutEntry } from './components/ShortcutsModal';
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { aside, track } from 'framer-motion/client';
+import { aside, form, track } from 'framer-motion/client';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { ExportModal, ExportFormat } from './components/ExportModal';
@@ -402,9 +402,24 @@ export default function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
   const [tracks, setTracks] = useState<Tracks[]>([]);
-  const [projectsrendering, setprojectsrendering] = useState<string[]>([]);
-  const [isRendering, setIsRendering] = useState(false) 
+  // ─── Multi-project render state ──────────────────────────────────────────────
+  interface RenderStatus {
+    projectName: string;
+    renderStatus: 'rendering' | 'success';
+    renderPercent: number;
+  }
+  const [renderingProjects, setRenderingProjects] = useState<RenderStatus[]>([]);
 
+
+
+
+  useEffect(() => {
+    // 1. Filtra os projetos que estão com status 'success' neste ciclo
+    const completedProjects = renderingProjects.filter(p => p.renderStatus === 'success');
+
+    //completedProjects.map( (cp) =>   triggerRenderNotification(`Your project ${cp.projectName}  has been rendered`))
+
+  }, [renderingProjects]); // Depende apenas da lista de projetos ativos
 
 
   //deleteClipId is used to store the id of a clip that is changed of track
@@ -920,9 +935,7 @@ const topClips = useRef<Clip[] | null >([]);
 const [topAudios, setTopAudios] = useState<Clip [] | null>(null);
 
 
-//State management for rendering feedback
-const [renderStatus, setRenderStatus] = useState<'idle' | 'rendering' | 'success'>('idle');
-const [renderPercent, setRenderPercent] = useState(0);
+//State management for rendering feedback (per-project, see renderingProjects array)
 
 
 //code source monitor only work when mouse is over it
@@ -948,38 +961,58 @@ useEffect(()=> {
 
 
 
-// Dentro do seu componente App
+// Listen for export progress from Tauri and update the correct project's renderPercent
 useEffect(() => {
-  const unlisten = listen<number>('export-progress', (event) => {
-    // Update the state you're using in the progress bar
-    console.log("Progresso recebido:", event.payload);
-    setRenderPercent(event.payload);
-    
-      
+  const unlisten = listen<{ projectName: string; percent: number } | number>('export-progress', (event) => {
+    const payload = event.payload;
+    if (typeof payload === 'number') {
+      // Legacy: update current open project
+      setRenderingProjects(prev =>
+        prev.map(r =>
+          r.projectName === projectName
+            ? { ...r, renderPercent: payload, renderStatus: payload >= 100 ? 'success' : 'rendering' }
+            : r
+        )
+      );
+    } else {
+      setRenderingProjects(prev =>
+        prev.map(r =>
+          r.projectName === payload.projectName
+            ? { ...r, renderPercent: payload.percent, renderStatus: payload.percent >= 100 ? 'success' : 'rendering' }
+            : r
+        )
+      );
+    }
+    console.log("Progresso recebido:", payload);
   });
 
   return () => {
     unlisten.then(f => f());
   };
-}, []);
+}, [projectName]);
 
 
 
 
 
-useEffect(() => 
-  {
 
-    if(renderPercent == 100)
-    {  
-      setRenderStatus('success')
-      setprojectsrendering( prev =>  prev.filter(p => p !== projectName))
-      triggerRenderNotification(`Your project ${projectName}  has been rendered`)
-    
+
+useEffect(() => {
+  // When any project finishes rendering (100%), trigger notification and keep in list as 'success'
+  renderingProjects.forEach(r => {
+    if (r.renderPercent == 100 && r.renderStatus == 'success') {
+      triggerRenderNotification(`Your project ${r.projectName} has been rendered`);
     }
+  });
+
+    setRenderingProjects(prev => prev.map(p => 
+      (p.renderPercent === 100) ? { ...p, renderPercent: 101 } : p
+    ));
+
+}, [renderingProjects])
 
 
-  }, [renderPercent])
+
 
 
 
@@ -1155,44 +1188,47 @@ const separateAudio = async (clip: Clip) =>
 
 }
 
-useEffect(()=> {
-
-    setIsRendering(projectsrendering.includes(projectName) )
-
-    let a = (projectsrendering.includes(projectName) )
-
-    console.log('state', a, projectName, projectsrendering)
-    
-
-}, [projectsrendering, projectName])
+// Derived: is the currently open project being rendered?
+const isRendering = renderingProjects.some(
+  r => r.projectName === projectName && r.renderStatus === 'rendering'
+);
 
 
 
-const handleCancelExport = async () => {
+const handleCancelExport = async (targetProjectName?: string) => {
+  const nameToCancel = targetProjectName ?? projectName;
   try {
-    // [English Comment] Signal Rust to kill the FFmpeg task
     await invoke('cancel_export');
-    setRenderStatus('idle');
-    setRenderPercent(0);
-    console.log("Export cancelled by user");
-    setprojectsrendering( prev =>  prev.filter(p => p !== projectName))
+    setRenderingProjects(prev => prev.filter(r => r.projectName !== nameToCancel));
+    console.log("Export cancelled for:", nameToCancel);
   } catch (err) {
     console.error("Failed to cancel export:", err);
   }
 };
 
 
-// Dentro da sua função de exportação no App.tsx
+// Multi-project export: adds this project to the renderingProjects array
 const startExport = async (format: ExportFormat) => {
+
+  console.log('format', format)
+
   setIsExportModalOpen(false);
   setExportKind(format.kind);
 
-  setprojectsrendering( prev => [ ...prev, projectName])
- 
+  // Add this project to the rendering list (or reset if already there)
+  setRenderingProjects(prev => {
+    const exists = prev.find(r => r.projectName === projectName);
+    if (exists) {
+      return prev.map(r =>
+        r.projectName === projectName
+          ? { ...r, renderStatus: 'rendering', renderPercent: 0 }
+          : r
+      );
+    }
+    return [...prev, { projectName, renderStatus: 'rendering', renderPercent: 0 }];
+  });
+
   try {
-    setRenderPercent(0);
-    setRenderStatus('rendering');
- 
     if (!currentProjectPath) return;
  
     const safeName = (currentProjectPath as string)
@@ -1200,10 +1236,10 @@ const startExport = async (format: ExportFormat) => {
       .toLowerCase();
  
     // Escolhe extensão e filtro baseados no formato
-    const ext = format.codec; // 'mp4' | 'mpeg4' | 'mp3' | 'wav'
+    const ext = format.codec; // 'mp4' | 'mkv' | 'mp3' | 'wav'
     const filterName  = format.kind === 'video' ? 'Video' : 'Audio';
     // mpeg4 usa extensão .mp4 na prática (mesmo container)
-    const fileExt = ext === 'mpeg4' ? 'mp4' : ext;
+    const fileExt = ext === 'mp4' ? 'mp4' : ext;
  
     const targetPath = await save({
       title: `Export ${filterName}`,
@@ -1212,15 +1248,13 @@ const startExport = async (format: ExportFormat) => {
     });
  
     if (!targetPath) {
-      setRenderStatus('idle');
+      setRenderingProjects(prev => prev.filter(r => r.projectName !== projectName));
       return;
     }
  
     const fps = projectConfig.fps || 30;
- 
-    // Para áudio, passa um flag extra para o exportVideo saber que é só áudio
-    // (você pode adaptar exportVideo no renderBridge para aceitar isso,
-    //  ou usar um invoke separado se preferir)
+    const capturedProjectName = projectName; // capture for closures
+
     await exportVideo({
       targetPath: targetPath as string,
       fps,
@@ -1233,22 +1267,34 @@ const startExport = async (format: ExportFormat) => {
       groupsRef,
       getInterpolatedValueWithFades,
       settingsFolder: settingsFolder ?? undefined,
-      exportKind: format.kind,    // <- novo campo: 'video' | 'audio'
-      exportCodec: format.codec,  // <- novo campo: 'mp4'|'mpeg4'|'mp3'|'wav'
+      exportKind: format.kind,
+      exportCodec: format.codec,
       onProgress: (percent) => {
-        setRenderPercent(percent);
+        setRenderingProjects(prev =>
+          prev.map(r =>
+            r.projectName === capturedProjectName
+              ? { ...r, renderPercent: percent, renderStatus: percent >= 100 ? 'success' : 'rendering' }
+              : r
+          )
+        );
       },
       onError: (msg) => {
         console.error('Export Error:', msg);
-        setRenderStatus('idle');
+        setRenderingProjects(prev => prev.filter(r => r.projectName !== capturedProjectName));
       },
     });
- 
-    setRenderStatus('success');
+
+    setRenderingProjects(prev =>
+      prev.map(r =>
+        r.projectName === capturedProjectName
+          ? { ...r, renderStatus: 'success', renderPercent: 100 }
+          : r
+      )
+    );
  
   } catch (error) {
     console.error('Export Error:', error);
-    setRenderStatus('idle');
+    setRenderingProjects(prev => prev.filter(r => r.projectName !== projectName));
   }
 };
  
@@ -5445,14 +5491,22 @@ return (
   
 />
  
-{/* Floating Export Progress HUD */}
-<ExportHUD
-  isVisible={renderStatus === 'rendering'}
-  percent={renderPercent}
-  kind={exportKind}
-  onCancel={handleCancelExport}
-
-/>
+{/* Floating Export Progress HUDs — stacked list, one per rendering project */}
+<div className="fixed top-4 right-4 z-[800] flex flex-col gap-2 w-64">
+  {renderingProjects
+    .filter(rp => rp.renderStatus === 'rendering')
+    .map((rp) => (
+      <ExportHUD
+        key={rp.projectName}
+        isVisible={true}
+        percent={rp.renderPercent}
+        kind={exportKind}
+        projectName={rp.projectName}
+        onCancel={() => handleCancelExport(rp.projectName)}
+      />
+    ))
+  }
+</div>
  
 
 

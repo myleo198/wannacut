@@ -8,6 +8,24 @@
 
 **This is Free CapCut available for Linux and Windows. More complete than other projects in the community: So give a star to the project if you like.** **I am accepting recommendations**
 
+
+<div style="display: flex; justify-content: space-between; align-item: center ">
+
+<p align="left">
+  <a href="https://wannacut.app/">
+    <img src="https://wannacut.app/logoWannaCut.png" alt="Made in Brazil" width="120" height="120" />
+  </a>
+</p>
+
+<p align="right">
+  <a href="https://feitonobrasil.dev.br">
+    <img src="https://selo.feitonobrasil.dev.br/en/custom/1x.svg?color=%234141b4" alt="Made in Brazil" width="120" height="120" />
+  </a>
+</p>
+
+</div>
+
+
 ### **Status:** 🛠️ _Premiere Version is_ **Available ❗❗❗** _(Beta)_
 
 ----------

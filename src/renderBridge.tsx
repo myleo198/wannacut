@@ -46,12 +46,16 @@ export interface ExportOptions {
   projectConfig: { width: number; height: number };
   currentProjectPath: string;
   clips: any[];
+  /** Used only to read the live camera as a fallback; the export creates its own isolated scene/groups. */
   sceneRef: React.MutableRefObject<THREE.Scene | null>;
   rendererRef: React.MutableRefObject<THREE.WebGLRenderer | null>;
   cameraRef: React.MutableRefObject<any>;
+  /** No longer mutated during export — kept for API compatibility. */
   groupsRef: React.MutableRefObject<Map<string, THREE.Group>>;
   getInterpolatedValueWithFades: (time: number, clip: any, prop: string) => any;
   settingsFolder?: string;
+  exportKind?: 'video' | 'audio';
+  exportCodec?: string;
   onProgress?: (percent: number) => void;
   onError?: (msg: string) => void;
 }
@@ -104,10 +108,23 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
     return cam;
   })();
 
+  // ── FIX: Create an isolated Scene and groupsRef exclusively for this export.
+  // This prevents concurrent exports from different projects from mutating each
+  // other's Three.js scene graph via the shared sceneRef / groupsRef.
+  const exportScene  = new THREE.Scene();
+  const exportGroups = new Map<string, THREE.Group>();
+  const exportSceneRef  = { current: exportScene };
+  const exportGroupsRef = { current: exportGroups };
+
+  // Background colour from projectConfig (if provided)
+  if ((projectConfig as any).backgroundColor) {
+    exportScene.background = new THREE.Color((projectConfig as any).backgroundColor);
+  }
+
   try {
     // -----------------------------------------------------------------------
     // FASE 1 (0%→70%): Renderização de vídeo frame a frame via drawFrame
-    // Idêntico ao preview — drawFrame cuida do vídeo, áudio ignorado (isPlaying=false)
+    // Uses its own isolated scene/groups — safe for parallel exports.
     // -----------------------------------------------------------------------
     for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
       const t = frameIdx / fps;
@@ -115,17 +132,20 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       offscreenRenderer.setRenderTarget(renderTarget);
 
       await drawFrame({
-        time: t, projectConfig, currentProjectPath, sceneRef,
+        time: t, projectConfig, currentProjectPath,
+        // ── FIX: use isolated refs, NOT the shared component refs ──
+        sceneRef:    exportSceneRef  as any,
         rendererRef: { current: offscreenRenderer } as any,
         cameraRef:   { current: exportCamera }       as any,
         topClips:    topClipsRef                     as any,
-        groupsRef,   getInterpolatedValueWithFades,   invoke,
+        groupsRef:   exportGroupsRef                 as any,
+        getInterpolatedValueWithFades,   invoke,
         topAudios:   topAudiosRef                    as any,
         isPlaying:   false,
         settingsFolder,
       });
 
-      offscreenRenderer.render(sceneRef.current!, exportCamera);
+      offscreenRenderer.render(exportScene, exportCamera);
 
       const pixelBuffer = new Uint8Array(W * H * 4);
       offscreenRenderer.readRenderTargetPixels(renderTarget, 0, 0, W, H, pixelBuffer);
@@ -133,6 +153,9 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       const flipped = flipVertical(pixelBuffer, W, H);
       auxCtx.putImageData(new ImageData(new Uint8ClampedArray(flipped), W, H), 0, 0);
 
+      // ── FIX: projectPath already uniquely identifies which project's frames
+      // these are. The Rust side saves frames under <projectPath>/export_frames/
+      // so concurrent exports write to different folders — no collision.
       await invoke("save_export_frame", {
         projectPath: currentProjectPath,
         frameIndex:  frameIdx,
@@ -192,6 +215,18 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
   } finally {
     offscreenRenderer.setRenderTarget(null);
     renderTarget.dispose();
+
+    // ── FIX: dispose all meshes/materials/textures from the isolated export scene
+    exportScene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry?.dispose();
+        const mat = obj.material as THREE.MeshBasicMaterial;
+        mat?.map?.dispose();
+        mat?.dispose();
+      }
+    });
+    exportGroups.clear();
+
     offscreenRenderer.dispose();
     auxCanvas.remove();
   }

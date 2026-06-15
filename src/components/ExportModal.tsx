@@ -16,14 +16,14 @@ interface ExportModalProps {
   onConfirm: (format: ExportFormat) => void;
 }
 
-const VIDEO_OPTIONS: { label: string; ext: 'mp4' | 'mpeg4'; desc: string }[] = [
-  { label: 'MP4 / H.264', ext: 'mp4',   desc: 'Universal — best compatibility' },
-  { label: 'MPEG-4',      ext: 'mpeg4', desc: 'Legacy container, broad support' },
+const VIDEO_OPTIONS: { label: string; ext: 'mp4' | 'mkv'; desc: string }[] = [
+  { label: 'MP4 / H.264', ext: 'mp4', desc: 'Universal — best compatibility' },
+  { label: 'MKV',         ext: 'mkv', desc: 'Robust container — open-source standard' },
 ];
 
 const AUDIO_OPTIONS: { label: string; ext: 'mp3' | 'wav'; desc: string }[] = [
-  { label: 'MP3',  ext: 'mp3', desc: 'Compressed — smaller file size' },
-  { label: 'WAV',  ext: 'wav', desc: 'Lossless — studio quality' },
+  { label: 'MP3', ext: 'mp3', desc: 'Compressed — smaller file size' },
+  { label: 'WAV', ext: 'wav', desc: 'Lossless — studio quality' },
 ];
 
 export function ExportModal({ isOpen, onClose, onConfirm }: ExportModalProps) {
