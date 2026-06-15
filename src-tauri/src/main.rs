@@ -32,9 +32,12 @@ use tauri_plugin_shell::ShellExt;
 
 use std::io::Write;
 
+
 use std::process::Child;
-use std::sync::Mutex;
 use tauri::State;
+
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandChild;
@@ -43,6 +46,12 @@ use serde_json::json;
 
 //  Updated state to hold the Tauri Sidecar CommandChild
 pub struct ExportState(pub Mutex<Option<CommandChild>>);
+pub struct YtDlpState(pub Mutex<Option<std::process::Child>>);
+
+pub struct YtDlpPid(pub AtomicU32); // 0 = nenhum processo ativo
+
+
+
 
 #[derive(serde::Serialize)]
 struct Project {
@@ -706,38 +715,30 @@ async fn update_ytdlp(bin_path: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn download_youtube_video(
+async fn download_video(
     app_handle: tauri::AppHandle,
     project_path: String,
     settings_folder: String,
     url: String,
+    yt_pid: State<'_, YtDlpPid>,
 ) -> Result<String, String> {
-    // 1. Configuração de caminhos
     let mut download_path = PathBuf::from(&project_path);
     download_path.push("videos");
 
     let bin_dir = PathBuf::from(&settings_folder).join("bin");
-    let bin_name = if cfg!(target_os = "windows") {
-        "yt-dlp.exe"
-    } else {
-        "yt-dlp"
-    };
+    let bin_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
     let bin_path = bin_dir.join(bin_name);
 
-    // 2. Garantir que as pastas existam
     if !download_path.exists() {
         fs::create_dir_all(&download_path).map_err(|e| e.to_string())?;
     }
     if !bin_dir.exists() {
         fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
     }
-
-    // 3. SE NÃO EXISTE O ARQUIVO, BAIXA AGORA
     if !bin_path.exists() {
         download_initial_binary(&bin_path).await?;
     }
 
-    // 4. Função auxiliar: roda yt-dlp com progresso em tempo real via stdout
     let run_download_with_progress = |path_to_bin: &Path, app: &tauri::AppHandle| -> Result<std::process::Output, String> {
         use std::io::BufRead;
 
@@ -748,8 +749,8 @@ async fn download_youtube_video(
                 "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                 "--merge-output-format", "mp4",
-                "--newline",           // Cada linha de progresso separada (essencial para parsing)
-                "--progress",          // Garante saída de progresso
+                "--newline",
+                "--progress",
                 "-o", &format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()),
                 &url,
             ])
@@ -758,15 +759,15 @@ async fn download_youtube_video(
             .spawn()
             .map_err(|e| format!("Erro ao iniciar yt-dlp: {}", e))?;
 
-        // Lê stdout linha a linha para capturar o progresso
+        // Guarda o PID para cancelamento
+        yt_pid.0.store(child.id(), Ordering::SeqCst);
+
         if let Some(stdout) = child.stdout.take() {
             let app_clone = app.clone();
             let reader = std::io::BufReader::new(stdout);
             for line in reader.lines() {
                 if let Ok(line) = line {
-                    // yt-dlp emite linhas como: "[download]  42.3% of 123.45MiB at ..."
                     if line.contains("[download]") && line.contains('%') {
-                        // Extrai o número antes do '%'
                         if let Some(pct_str) = line.split('%').next() {
                             let trimmed = pct_str.split_whitespace().last().unwrap_or("0");
                             if let Ok(pct) = trimmed.parse::<f64>() {
@@ -779,11 +780,19 @@ async fn download_youtube_video(
             }
         }
 
-        // Aguarda o processo terminar e coleta o resultado
         let output = child.wait_with_output()
-            .map_err(|e| format!("Erro ao aguardar yt-dlp: {}", e))?;
+        .map_err(|e| format!("Erro ao aguardar yt-dlp: {}", e))?;
 
-        // Emite 100% ao finalizar com sucesso
+        // Checa se foi cancelado ANTES de limpar o PID
+        let was_cancelled = yt_pid.0.load(Ordering::SeqCst) == 0;
+
+        // Limpa o PID ao terminar
+        yt_pid.0.store(0, Ordering::SeqCst);
+
+        if was_cancelled {
+            return Err("__CANCELLED__".into());
+        }
+
         if output.status.success() {
             let _ = app.emit("yt-download-progress", 100u32);
         }
@@ -791,19 +800,14 @@ async fn download_youtube_video(
         Ok(output)
     };
 
-    // --- TENTATIVA 1 ---
     let output = run_download_with_progress(&bin_path, &app_handle)?;
-
     if output.status.success() {
         return Ok("Download completed successfully".into());
     }
 
-    // --- LÓGICA DE LAZY UPDATE (Se o download falhar por versão antiga) ---
     let stderr = String::from_utf8_lossy(&output.stderr);
     if stderr.contains("update") || stderr.contains("403") || stderr.contains("Sign in") {
         update_ytdlp(&bin_path).await?;
-
-        // TENTATIVA 2
         let output_retry = run_download_with_progress(&bin_path, &app_handle)?;
         if output_retry.status.success() {
             return Ok("Download successful after core update".into());
@@ -815,6 +819,33 @@ async fn download_youtube_video(
 
     Err(format!("yt-dlp error: {}", stderr))
 }
+
+
+#[tauri::command]
+async fn cancel_video_download(yt_pid: State<'_, YtDlpPid>) -> Result<(), String> {
+    let pid = yt_pid.0.load(std::sync::atomic::Ordering::SeqCst);
+    if pid == 0 {
+        return Ok(()); // Nenhum download ativo
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status();
+    }
+
+    yt_pid.0.store(0, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
 
 #[tauri::command]
 async fn generate_thumbnail(
@@ -1635,6 +1666,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init()) // Dialog plugin for system file pickers
         // Custom protocol for serving local video files with range-request support
         .manage(ExportState(Mutex::new(None)))
+        .manage(YtDlpPid(std::sync::atomic::AtomicU32::new(0)))
         .invoke_handler(tauri::generate_handler![
             save_export_frame,
             save_export_audio,
@@ -1643,7 +1675,8 @@ fn main() {
             delete_project,
             import_asset,
             list_assets,
-            download_youtube_video,
+            download_video,
+            cancel_video_download,
             load_latest_project,
             save_project_data,
             list_project_files,

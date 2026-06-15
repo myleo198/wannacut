@@ -48,6 +48,7 @@ interface ItensAsideProps {
   fontName: string, 
   fontPath: string
   ) => void;
+  isRendering: boolean;
 
 
 
@@ -125,7 +126,8 @@ export const ItensAside = ({
   loadSystemFonts,
   handleDragStartText,
   handleDragStartEffect,
-  handleDragStartTransition
+  handleDragStartTransition,
+  isRendering
   
 }: ItensAsideProps) => {
   const [activeTab, setActiveTab] = useState('Media');
@@ -195,7 +197,8 @@ export const ItensAside = ({
   return (
     <aside
       style={{ width: `${sidebarWidth}px` }}
-      className="relative flex h-full border-r border-white/5 bg-[#09090b] overflow-hidden select-none"
+      className={`relative flex h-full border-r border-white/5 bg-[#09090b] overflow-hidden select-none
+      ${isRendering ? 'opacity-40 pointer-events-none select-none' : ''}`}
     >
       {/* --- SIDEBAR NAV (ICON MENU) --- */}
       <nav className="w-[60px] flex flex-col items-center py-4 gap-4 border-r border-white/5 bg-black/20">

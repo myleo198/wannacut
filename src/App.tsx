@@ -86,7 +86,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { aside, track } from 'framer-motion/client';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-
+import { ExportModal, ExportFormat } from './components/ExportModal';
+import { ExportHUD } from './components/ExportHUD';
+ 
+ 
 
 
 
@@ -399,6 +402,10 @@ export default function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
   const [tracks, setTracks] = useState<Tracks[]>([]);
+  const [projectsrendering, setprojectsrendering] = useState<string[]>([]);
+  const [isRendering, setIsRendering] = useState(false) 
+
+
 
   //deleteClipId is used to store the id of a clip that is changed of track
   const [deleteClipId, setDeleteClipId] = useState<string | null>(null);
@@ -438,6 +445,10 @@ const [hasNewMessages, setHasNewMessages] = useState(false);
 const notifyRef = useRef<NotificationsRef>(null); // A Ref que você já tem
 
 
+
+
+const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+const [exportKind, setExportKind] = useState<'video' | 'audio' | null>(null);
 
 
 
@@ -962,6 +973,7 @@ useEffect(() =>
     if(renderPercent == 100)
     {  
       setRenderStatus('success')
+      setprojectsrendering( prev =>  prev.filter(p => p !== projectName))
       triggerRenderNotification(`Your project ${projectName}  has been rendered`)
     
     }
@@ -1143,6 +1155,17 @@ const separateAudio = async (clip: Clip) =>
 
 }
 
+useEffect(()=> {
+
+    setIsRendering(projectsrendering.includes(projectName) )
+
+    let a = (projectsrendering.includes(projectName) )
+
+    console.log('state', a, projectName, projectsrendering)
+    
+
+}, [projectsrendering, projectName])
+
 
 
 const handleCancelExport = async () => {
@@ -1152,6 +1175,7 @@ const handleCancelExport = async () => {
     setRenderStatus('idle');
     setRenderPercent(0);
     console.log("Export cancelled by user");
+    setprojectsrendering( prev =>  prev.filter(p => p !== projectName))
   } catch (err) {
     console.error("Failed to cancel export:", err);
   }
@@ -1159,28 +1183,44 @@ const handleCancelExport = async () => {
 
 
 // Dentro da sua função de exportação no App.tsx
-const startExport = async () => {
+const startExport = async (format: ExportFormat) => {
+  setIsExportModalOpen(false);
+  setExportKind(format.kind);
+
+  setprojectsrendering( prev => [ ...prev, projectName])
+ 
   try {
     setRenderPercent(0);
     setRenderStatus('rendering');
-
+ 
     if (!currentProjectPath) return;
-
-    const safeName = (currentProjectPath as string).replace(/[^a-z0-9]/gi, '_').toLowerCase();
-
+ 
+    const safeName = (currentProjectPath as string)
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase();
+ 
+    // Escolhe extensão e filtro baseados no formato
+    const ext = format.codec; // 'mp4' | 'mpeg4' | 'mp3' | 'wav'
+    const filterName  = format.kind === 'video' ? 'Video' : 'Audio';
+    // mpeg4 usa extensão .mp4 na prática (mesmo container)
+    const fileExt = ext === 'mpeg4' ? 'mp4' : ext;
+ 
     const targetPath = await save({
-      title: 'Export Final Video',
-      filters: [{ name: 'Video', extensions: ['mp4'] }],
-      defaultPath: `${safeName}.mp4`,
+      title: `Export ${filterName}`,
+      filters: [{ name: filterName, extensions: [fileExt] }],
+      defaultPath: `${safeName}.${fileExt}`,
     });
-
+ 
     if (!targetPath) {
       setRenderStatus('idle');
       return;
     }
-
+ 
     const fps = projectConfig.fps || 30;
-
+ 
+    // Para áudio, passa um flag extra para o exportVideo saber que é só áudio
+    // (você pode adaptar exportVideo no renderBridge para aceitar isso,
+    //  ou usar um invoke separado se preferir)
     await exportVideo({
       targetPath: targetPath as string,
       fps,
@@ -1193,22 +1233,25 @@ const startExport = async () => {
       groupsRef,
       getInterpolatedValueWithFades,
       settingsFolder: settingsFolder ?? undefined,
+      exportKind: format.kind,    // <- novo campo: 'video' | 'audio'
+      exportCodec: format.codec,  // <- novo campo: 'mp4'|'mpeg4'|'mp3'|'wav'
       onProgress: (percent) => {
         setRenderPercent(percent);
       },
       onError: (msg) => {
-        console.error("Export Error:", msg);
+        console.error('Export Error:', msg);
         setRenderStatus('idle');
       },
     });
-
+ 
     setRenderStatus('success');
-
+ 
   } catch (error) {
-    console.error("Export Error:", error);
+    console.error('Export Error:', error);
     setRenderStatus('idle');
   }
 };
+ 
 
   const sanitizeNumber = (num: number): number => {
   return Number(Math.round(num * 100) / 100);
@@ -2968,7 +3011,7 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
 
       if (matchShortcut(e, 'export')) {
         e.preventDefault();
-        startExport();
+        setIsExportModalOpen(true);
       }
 
         // Undo
@@ -4455,7 +4498,7 @@ const openProject = async (path: string) => {
     setDownloadYTprogress(0);
     showNotify("Downloading...", "success");
     try {
-      await invoke('download_youtube_video', { projectPath: currentProjectPath, settingsFolder: settingsFolder ,url: youtubeUrl });
+      await invoke('download_video', { projectPath: currentProjectPath, settingsFolder: settingsFolder ,url: youtubeUrl });
       showNotify("Download Complete!", "success");
       setIsImportModalOpen(false);
       setYoutubeUrl("");
@@ -5394,6 +5437,26 @@ const deleteKeyframe = (clipId: string, kfId: string, view: string) => {
 return (
   <div className="flex flex-col h-screen w-screen bg-black text-zinc-300 font-sans overflow-hidden select-none">
     
+{/* Export Format Picker */}
+<ExportModal
+  isOpen={isExportModalOpen}
+  onClose={() => setIsExportModalOpen(false)}
+  onConfirm={(format) => startExport(format)}
+  
+/>
+ 
+{/* Floating Export Progress HUD */}
+<ExportHUD
+  isVisible={renderStatus === 'rendering'}
+  percent={renderPercent}
+  kind={exportKind}
+  onCancel={handleCancelExport}
+
+/>
+ 
+
+
+
     {/* NOTIFICATIONS SYSTEM */}
     <AnimatePresence>
       {notification && (
@@ -5451,7 +5514,7 @@ return (
           </div>
         </header>
 
-        <main className="flex-1 flex overflow-hidden">
+        <main className={`flex-1 flex overflow-hidden min-h-0`}>
           <aside className="w-64 border-r border-zinc-800 p-6 space-y-2 bg-[#0d0d0d]">
             <button className="w-full flex items-center gap-3 px-4 py-2 bg-zinc-800 text-white rounded-lg text-sm font-bold"><Clock size={18} /> Recent</button>
             
@@ -5533,7 +5596,7 @@ return (
             <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Set Shortcuts' onClick={() => setIsShortcutsOpen(true)}><Keyboard size={16}/></button>
             <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Post in social media'><Share2 size={16}/></button>
             <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Settings' onClick={() => setIsSettingsOpen(true)}><Settings size={16}/></button>
-            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Export video' onClick={()=> { startExport();}}><Import size={16}/></button>
+            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Export video' onClick={()=> { setIsExportModalOpen(true)}}><Import size={16}/></button>
           </div>
         </header>
 
@@ -5563,6 +5626,7 @@ return (
             availableFonts = {availableFonts}
             loadSystemFonts = {loadSystemFonts}
             handleDragStartText = {handleDragStartText}
+            isRendering = {isRendering}
           />
 
 <div id="twopreview" className="flex-1 flex overflow-hidden min-h-0 bg-[#050505]">
@@ -5909,8 +5973,8 @@ return (
         </main>
 
         {/* --- DYNAMIC TIMELINE SECTION --- */}
-        <footer 
-          className="bg-[#0c0c0c] border-t border-zinc-800 flex flex-col relative"
+       <footer
+          className={`bg-[#0c0c0c] border-t border-zinc-800 flex flex-col relative ${ isRendering ? 'opacity-40 pointer-events-none select-none' : ''}`}
           style={{ height: `${timelineHeight}px` }}
         >
           {/* TOP RESIZER HANDLE */}
@@ -6202,33 +6266,33 @@ return (
         >
 
 
-          {/* Track Context Menu */}
-              {trackContextMenu && (() => {
-                const menuHeight = 60;
-                const menuWidth = 190;
-                const overflowY = trackContextMenu.y + menuHeight > window.innerHeight;
-                const overflowX = trackContextMenu.x + menuWidth > window.innerWidth;
-                const adjustedY = overflowY ? trackContextMenu.y - menuHeight : trackContextMenu.y;
-                const adjustedX = overflowX ? trackContextMenu.x - menuWidth : trackContextMenu.x;
+      {/* Track Context Menu */}
+      {trackContextMenu && (() => {
+        const menuHeight = 60;
+        const menuWidth = 190;
+        const overflowY = trackContextMenu.y + menuHeight > window.innerHeight;
+        const overflowX = trackContextMenu.x + menuWidth > window.innerWidth;
+        const adjustedY = overflowY ? trackContextMenu.y - menuHeight : trackContextMenu.y;
+        const adjustedX = overflowX ? trackContextMenu.x - menuWidth : trackContextMenu.x;
 
-                return (
-                  <div
-                    className="fixed z-[200] min-w-[190px] bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-lg py-1.5 animate-in fade-in zoom-in duration-100"
-                    style={{ top: adjustedY, left: adjustedX }}
-                  >
-                    <button
-                      onClick={() => {
-                        cleanEmptySpace(trackContextMenu.trackId, trackContextMenu.clickTime);
-                        setTrackContextMenu(null);
-                      }}
-                      className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
-                    >
-                      <BrushCleaning size={14} className="opacity-70" />
-                      <span>Clean Empty Space</span>
-                    </button>
-                  </div>
-                );
-              })()}
+        return (
+          <div
+            className="fixed z-[200] min-w-[190px] bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-lg py-1.5 animate-in fade-in zoom-in duration-100"
+            style={{ top: adjustedY, left: adjustedX }}
+          >
+            <button
+              onClick={() => {
+                cleanEmptySpace(trackContextMenu.trackId, trackContextMenu.clickTime);
+                setTrackContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
+            >
+              <BrushCleaning size={14} className="opacity-70" />
+              <span>Clean Empty Space</span>
+            </button>
+          </div>
+        );
+      })()}
 
 
 
@@ -6887,6 +6951,22 @@ return (
                   </div>
                 )}
               </button>
+
+              
+
+              {isDownloading && (
+                  <button
+                    onClick={async () => {
+                      await invoke('cancel_video_download');
+                      setIsDownloading(false);
+                      setDownloadYTprogress(0);
+                      showNotify('Download cancelled.', 'error');
+                    }}
+                    className="w-full mt-2 py-3 rounded-xl font-black text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-700 uppercase tracking-widest transition-all"
+                  >
+                    Cancel
+                  </button>
+                )}
             </div>
             
             <button onClick={() => setIsImportModalOpen(false)} className="w-full mt-4 text-[10px] text-zinc-500 font-bold uppercase"> Close </button>
@@ -6920,43 +7000,6 @@ return (
         </div>
       )}
     </AnimatePresence>
-
-    <AnimatePresence>
-  {renderStatus === 'rendering' && (
-    <motion.div className="fixed inset-0 z-[600] bg-[#050505]/95 backdrop-blur-2xl flex flex-col items-center justify-center">
-      <div className="w-80 space-y-8 text-center">
-        
-        {/* Progress UI */}
-        <div className="space-y-2">
-           <div className="relative h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-              <motion.div 
-                className="h-full bg-cyan-600 shadow-[0_0_20px_rgba(220,38,38,0.8)]"
-                initial={{ width: "0%" }}
-                animate={{ width: `${renderPercent}%` }}
-              />
-            </div>
-            <p className="text-zinc-500 text-[9px] font-mono tracking-widest uppercase">
-              Rendering Master: {renderPercent}%
-            </p>
-        </div>
-
-        {/* Cancel Button Implementation */}
-        <button
-          onClick={handleCancelExport}
-          className="group relative px-6 py-2 overflow-hidden rounded-full border border-white/10 hover:border-red-500/50 transition-all"
-        >
-          <div className="relative z-10 flex items-center gap-2 text-zinc-400 group-hover:text-white transition-colors">
-            <X size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Abort Mission</span>
-          </div>
-          {/* Subtle hover background effect */}
-          <div className="absolute inset-0 bg-red-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
-
-      </div>
-    </motion.div>
-  )}
-</AnimatePresence>
 
 
   {/* Project Config */}
