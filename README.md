@@ -9,7 +9,7 @@
 **This is Free CapCut available for Linux and Windows. More complete than other projects in the community: So give a star to the project if you like.** **I am accepting recommendations**
 
 
-<div style="display: flex; justify-content: space-between; align-item: center ">
+<div style="display: flex; flex-direction: row; justify-content: space-between; align-item: center ">
 
 <p align="left">
   <a href="https://wannacut.app/">
