@@ -152,6 +152,196 @@ struct Fonts {
     plan: String,
 }
 
+
+// ============================================================
+// FREESOUND COMMANDS — adicionar ao main.rs
+// ============================================================
+// Dependência já existente: reqwest (com feature "json")
+// Nenhuma crate nova necessária.
+// ============================================================
+
+// ─── Structs de resposta da API ──────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct FreesoundSound {
+    pub id: u64,
+    pub name: String,
+    pub username: String,
+    pub duration: f64,
+    pub license: String,         // URL completa da licença
+    pub previews: FreesoundPreviews,
+    pub download: String,        // URL de download (requer auth)
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct FreesoundPreviews {
+    #[serde(rename = "preview-hq-mp3")]
+    pub preview_hq_mp3: Option<String>,
+    #[serde(rename = "preview-lq-mp3")]
+    pub preview_lq_mp3: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FreesoundSearchResponse {
+    results: Vec<FreesoundSound>,
+}
+
+// ─── Busca de sons ───────────────────────────────────────────
+
+/// Lê a chave da API do Freesound do arquivo wannacut_settings.json
+/// localizado dentro da settingsFolder. Retorna None se não existir.
+#[tauri::command]
+async fn read_freesound_api_key(settings_folder: String) -> Result<Option<String>, String> {
+    let settings_path = std::path::Path::new(&settings_folder).join("wannacut_settings.json");
+    if !settings_path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Erro ao ler wannacut_settings.json: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Erro ao parsear wannacut_settings.json: {}", e))?;
+    let key = json.get("freesound_api_key")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
+    Ok(key)
+}
+
+/// Salva a chave da API do Freesound no wannacut_settings.json
+#[tauri::command]
+async fn save_freesound_api_key(settings_folder: String, api_key: String) -> Result<(), String> {
+    let settings_path = std::path::Path::new(&settings_folder).join("wannacut_settings.json");
+
+    let mut json: serde_json::Value = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Erro ao ler wannacut_settings.json: {}", e))?;
+        serde_json::from_str(&content)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    json["freesound_api_key"] = serde_json::Value::String(api_key);
+
+    let serialized = serde_json::to_string_pretty(&json)
+        .map_err(|e| format!("Erro ao serializar settings: {}", e))?;
+    std::fs::write(&settings_path, serialized)
+        .map_err(|e| format!("Erro ao salvar wannacut_settings.json: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn search_freesound(
+    query: String,
+    license_filter: String, // "cc0" | "ccby" | "ccnc" | "" (todos)
+    api_key: String,        // chave por usuário, lida do wannacut_settings.json
+) -> Result<Vec<FreesoundSound>, String> {
+    // Monta o filtro de licença para a API do Freesound
+    // Freesound license field values:
+    //   "Creative Commons 0"           → CC0
+    //   "Attribution"                  → CC BY
+    //   "Attribution Noncommercial"    → CC BY-NC
+    let license_query = match license_filter.to_lowercase().as_str() {
+        "cc0"  => Some("license:\"Creative Commons 0\""),
+        "ccby" => Some("license:\"Attribution\""),
+        "ccnc" => Some("license:\"Attribution Noncommercial\""),
+        _      => None,
+    };
+
+    let mut full_query = query.clone();
+    if let Some(lq) = license_query {
+        full_query = format!("{} {}", full_query, lq);
+    }
+
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://freesound.org/apiv2/search/text/?query={}&fields=id,name,username,duration,license,previews,download&token={}",
+        urlencoding_simple(&full_query),
+        api_key
+    );
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Freesound request error: {}", e))?;
+
+    let data: FreesoundSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Freesound JSON parse error: {}", e))?;
+
+    Ok(data.results)
+}
+
+// ─── Download de som ─────────────────────────────────────────
+// Usa o preview HQ (MP3) para não exigir login OAuth.
+// O preview é público e de qualidade adequada para edição.
+
+#[tauri::command]
+async fn download_freesound(
+    sound_id: u64,
+    sound_name: String,
+    preview_url: String,   // URL do preview-hq-mp3
+    project_path: String,  // currentProjectPath do App.tsx
+) -> Result<String, String> {
+    use std::fs;
+
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get(&preview_url)
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Read bytes error: {}", e))?;
+
+    // Sanitiza o nome do arquivo
+    let safe_name = sound_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect::<String>();
+
+    // Garante extensão .mp3
+    let file_name = if safe_name.ends_with(".mp3") {
+        safe_name
+    } else {
+        format!("{}_{}.mp3", safe_name, sound_id)
+    };
+
+    // Destino: <project_path>/videos/<file_name>
+    let dest_dir = format!("{}/videos", project_path);
+    fs::create_dir_all(&dest_dir).map_err(|e| format!("Create dir error: {}", e))?;
+
+    let dest_path = format!("{}/{}", dest_dir, file_name);
+    fs::write(&dest_path, bytes).map_err(|e| format!("Write file error: {}", e))?;
+
+    Ok(file_name) // retorna o nome do arquivo para o frontend recarregar assets
+}
+
+// ─── Helper interno ──────────────────────────────────────────
+
+fn urlencoding_simple(s: &str) -> String {
+    let mut encoded = String::new();
+    for c in s.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => encoded.push(c),
+            ' ' => encoded.push('+'),
+            c => {
+                for byte in c.to_string().as_bytes() {
+                    encoded.push_str(&format!("%{:02X}", byte));
+                }
+            }
+        }
+    }
+    encoded
+}
+
 #[tauri::command]
 async fn check_notifications(settings_path: String) -> Result<Vec<Notification>, String> {
     let path = std::path::Path::new(&settings_path).join("seen_notifications.json");
@@ -930,6 +1120,96 @@ async fn get_video_frame(path: String, time_ms: f64) -> Result<String, String> {
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
+
+/// into the final audio file requested by the user (mp3 or wav).
+///
+/// JS invoke (renderBridge.tsx):
+///   invoke("assemble_exported_audio", { projectPath, targetPath, codec, duration })
+///
+/// `save_export_audio` writes the mix to:
+///   <project_path>/export_audio_mix.wav
+#[command]
+async fn assemble_exported_audio(
+    project_path: String,
+    target_path: String,
+    codec: String,
+    duration: f64,
+) -> Result<(), String> {
+    let project_dir = PathBuf::from(&project_path);
+    let source_wav  = project_dir.join("export_audio_mix.wav");
+    let target      = PathBuf::from(&target_path);
+
+    // ── Validate source ────────────────────────────────────────────────────
+    if !source_wav.exists() {
+        return Err(format!(
+            "[assemble_exported_audio] Source WAV not found: {}\n\
+             Make sure renderAudioOffline ran before this command.",
+            source_wav.display()
+        ));
+    }
+
+    // Ensure the destination directory exists
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("[assemble_exported_audio] Could not create output dir: {e}"))?;
+    }
+
+    println!(
+        "[assemble_exported_audio] codec={codec} | duration={duration:.2}s\n  \
+         src  = {}\n  dest = {}",
+        source_wav.display(),
+        target.display()
+    );
+
+    match codec.to_lowercase().as_str() {
+        // ── WAV → WAV: simple file copy, no FFmpeg needed ─────────────────
+        "wav" => {
+            std::fs::copy(&source_wav, &target)
+                .map_err(|e| format!("[assemble_exported_audio] Failed to copy WAV: {e}"))?;
+            println!("[assemble_exported_audio] WAV copy done.");
+        }
+
+        // ── WAV → MP3: encode with FFmpeg (libmp3lame) ────────────────────
+        "mp3" => {
+            if target.exists() {
+                let _ = std::fs::remove_file(&target);
+            }
+
+            let status = Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-i", source_wav.to_str().unwrap(),
+                    "-vn",
+                    "-acodec", "libmp3lame",
+                    "-q:a", "2",        // VBR ~190 kbps
+                    "-ar", "44100",
+                    "-ac", "2",
+                    target.to_str().unwrap(),
+                ])
+                .status()
+                .map_err(|e| format!("[assemble_exported_audio] FFmpeg spawn failed: {e}"))?;
+
+            if !status.success() {
+                return Err(format!(
+                    "[assemble_exported_audio] FFmpeg exited with status: {status}"
+                ));
+            }
+
+            println!("[assemble_exported_audio] MP3 encode done.");
+        }
+
+        other => {
+            return Err(format!(
+                "[assemble_exported_audio] Unknown codec: '{other}'. Expected 'mp3' or 'wav'."
+            ));
+        }
+    }
+
+    // ── Cleanup intermediate WAV ───────────────────────────────────────────
+    let _ = std::fs::remove_file(&source_wav);
+
+    Ok(())
+}
 /// Retorna um frame de preview em resolução reduzida (thumbnail rápida).
 /// Útil para scrubbing na timeline sem sobrecarregar o processo.
 /// `width` define a largura máxima do preview (altura é proporcional).
@@ -1711,7 +1991,12 @@ fn main() {
             open_font_folder,
             sync_video_effect,
             get_preview_frame,
-            send_notification_system
+            send_notification_system,
+            assemble_exported_audio,
+            search_freesound,
+            download_freesound,
+            read_freesound_api_key,
+            save_freesound_api_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

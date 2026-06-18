@@ -65,7 +65,9 @@ import {
   ArrowUp,
   Underline,
   Bell,
-  Keyboard
+  Keyboard,
+  ArrowDownToLine,
+  ExternalLink
   
 } from 'lucide-react';
 
@@ -216,6 +218,9 @@ interface Tracks
 
 
 const PIXELS_PER_SECOND = 5;
+
+
+
 
 
 export const convertZoom = (input: number): number => {
@@ -449,6 +454,8 @@ export default function App() {
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const canvasCursor = interactionMode === 'transform' ? 'move' : 'pointer';
 
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [plan, setPlan] = useState<'free' | 'pro' | 'ultimate'>('free');
 
 
 //Variables for effects
@@ -459,6 +466,10 @@ const settingsFolder = localStorage.getItem("wannacut_settings_folder");
 const [hasNewMessages, setHasNewMessages] = useState(false);
 const notifyRef = useRef<NotificationsRef>(null); // A Ref que você já tem
 
+
+// variable for HUD father element
+const [isHudListOpen, setIsHudListOpen] = useState(false);
+const activeProjects = renderingProjects.filter(rp => rp.renderStatus === 'rendering');
 
 
 
@@ -1000,14 +1011,12 @@ useEffect(() => {
 useEffect(() => {
   // When any project finishes rendering (100%), trigger notification and keep in list as 'success'
   renderingProjects.forEach(r => {
-    if (r.renderPercent == 100 && r.renderStatus == 'success') {
+    if (r.renderPercent >= 100 && r.renderStatus == 'rendering') {
       triggerRenderNotification(`Your project ${r.projectName} has been rendered`);
     }
   });
 
-    setRenderingProjects(prev => prev.map(p => 
-      (p.renderPercent === 100) ? { ...p, renderPercent: 101 } : p
-    ));
+
 
 }, [renderingProjects])
 
@@ -4235,7 +4244,7 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
               originalduration: Math.min(duration, 10),
               color: getRandomColor(),
               trackId: targetTrackId,
-              maxduration: duration ? duration : 10,
+              maxduration: duration ? duration : 36000,
               beginmoment: 0,
               dimensions: dimensions,
               scale: 1
@@ -5490,24 +5499,158 @@ return (
   onConfirm={(format) => startExport(format)}
   
 />
- 
-{/* Floating Export Progress HUDs — stacked list, one per rendering project */}
-<div className="fixed top-4 right-4 z-[800] flex flex-col gap-2 w-64">
-  {renderingProjects
-    .filter(rp => rp.renderStatus === 'rendering')
-    .map((rp) => (
-      <ExportHUD
-        key={rp.projectName}
-        isVisible={true}
-        percent={rp.renderPercent}
-        kind={exportKind}
-        projectName={rp.projectName}
-        onCancel={() => handleCancelExport(rp.projectName)}
+
+{/*Modal for Select Plan (Upgrade)*/}
+<AnimatePresence>
+  {isPlanModalOpen && (
+    <>
+      {/* Backdrop de Fundo */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={() => setIsPlanModalOpen(false)}
+        className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-md"
       />
-    ))
-  }
-</div>
+
+      {/* Card do Modal */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] w-full max-w-sm bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">Account</h3>
+            <h2 className="text-sm font-bold text-zinc-200 mt-0.5">Subscription Plan</h2>
+          </div>
+          <button 
+            onClick={() => setIsPlanModalOpen(false)}
+            className="p-1.5 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 rounded-full transition-colors cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Status do Plano Atual */}
+        <div className="bg-zinc-950 border border-zinc-800/60 rounded-xl p-4 mb-6 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Current Status</p>
+            <p className="text-sm font-black uppercase tracking-widest mt-0.5 text-white">
+              {plan === 'ultimate' ? '🚀 Ultimate' : plan === 'pro' ? '💎 Pro' : '🌱 Free Plan'}
+            </p>
+          </div>
+          
+          {/* Tag visual de destaque */}
+          <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full 
+            ${plan === 'free' ? 'bg-zinc-800 text-zinc-400' : 'bg-gradient-to-r from-amber-500/20 to-rose-500/20 border border-rose-500/30 text-rose-400'}`}
+          >
+            {plan === 'free' ? 'Limited' : 'Active'}
+          </span>
+        </div>
+
+        {/* Seções de Opções Disponíveis (Lógica Condicional Baseada no Estado) */}
+        <div className="space-y-3">
+          
+          {/* Se for FREE, pode migrar para o PRO */}
+          {plan === 'free' && (
+            <div className="border border-zinc-800 bg-white/[0.01] rounded-xl p-3.5 hover:border-zinc-700 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-zinc-200">Upgrade to Pro</p>
+                <span className="text-[10px] font-semibold text-zinc-500">10 Splits/Day</span>
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-1">Perfect for growing digital creators.</p>
+            </div>
+          )}
+
+          {/* Se for FREE ou PRO, pode migrar para o ULTIMATE */}
+          {(plan === 'free' || plan === 'pro') && (
+            <div className="border border-zinc-800 bg-gradient-to-br from-amber-500/[0.02] to-rose-500/[0.02] rounded-xl p-3.5 hover:border-rose-500/20 transition-all group">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400 group-hover:brightness-110 transition-all">Upgrade to Ultimate</p>
+                <span className="text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded-md tracking-wider">UNLIMITED</span>
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-1">Full speed, no barriers, max performance.</p>
+            </div>
+          )}
+
+          {/* Nota Informativa sobre como adquirir chaves */}
+          {plan !== 'ultimate' && (
+            <div className="pt-2 text-center">
+              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                Get your activation key instantly at:<br/>
+                <a 
+                  href="https://wannacut.app/getpro" 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-cyan-400 hover:underline inline-flex items-center gap-1 font-semibold mt-0.5 cursor-pointer"
+                >
+                  wannacut.app/getpro <ExternalLink size={8} />
+                </a>
+              </p>
+            </div>
+          )}
+
+          {/* Opção de Cancelamento (Visível apenas para planos pagos PRO e ULTIMATE) */}
+          {(plan === 'pro' || plan === 'ultimate') && (
+            <div className="pt-4 border-t border-zinc-800 text-center">
+              <button 
+                onClick={() => console.log("Ação de cancelamento futura")} 
+                className="text-[9px] uppercase font-black tracking-widest text-zinc-600 hover:text-rose-400 transition-colors cursor-pointer"
+              >
+                Cancel Subscription
+              </button>
+            </div>
+          )}
+
+        </div>
+      </motion.div>
+    </>
+  )}
+</AnimatePresence>
  
+
+{(activeProjects.length > 0) ? 
+  // Removido: bg-*, border, rounded, padding. Adicionado: relative.
+  <div className="fixed top-10 right-10 z-[800] flex flex-col gap-2 w-64  group transition-all duration-300"> 
+    
+    {/* Botão Flutuante - Continua aparecendo com a estilização própria */}
+    <button 
+      onClick={() => setIsHudListOpen(!isHudListOpen)}
+      className="absolute -top-2 -right-2 p-1.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 opacity-40 group-hover:opacity-100 hover:text-white transition-opacity shadow-lg z-[810]"
+      title={isHudListOpen ? "Collapse HUD" : "Expand HUD"}
+    >
+      {isHudListOpen ? (
+        <ArrowDownToLine size={14} className="rotate-180 transition-transform duration-300" />
+      ) : (
+        <ArrowDownToLine size={14} className="transition-transform duration-300" />
+      )}
+
+       <span className="relative -top-0 -right-0 ml-1 bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full text-[10px]">
+        {activeProjects.length}
+      </span>
+    </button>
+
+    {/* Lista de Projetos - Ela mantém o background individual se o ExportHUD tiver */}
+    <div className={`flex fixed top-15 flex-col gap-2 transition-all duration-300 origin-top overflow-hidden ${
+      isHudListOpen ? 'max-h-[400px] opacity-100 scale-100' : 'max-h-0 opacity-0 scale-95 pointer-events-none'
+    }`}>
+      {activeProjects.map((rp) => (
+        <ExportHUD
+          key={rp.projectName}
+          isVisible={true}
+          percent={rp.renderPercent}
+          kind={exportKind}
+          projectName={rp.projectName}
+          onCancel={() => handleCancelExport(rp.projectName)}
+        />
+      ))}
+    </div>
+  </div>
+  : null
+}
 
 
 
@@ -5545,6 +5688,12 @@ return (
 
 
           <div>
+
+          <button className="inline-flex mr-15 items-center gap-2 p-2 bg-indigo-600/15 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-amber-400 transition-colors" title="Manage Account & Plans" onClick={() => setIsPlanModalOpen(true)}>
+            <Sparkles size={20} />
+            <span className="text-xs font-bold uppercase tracking-wider pr-1">{plan === 'free' ? 'Get PRO' : plan === 'pro' ? 'Get Ultimate' : 'Manage Plan'}</span>
+          </button>
+        
 
           <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Set Shortcuts' onClick={() => setIsShortcutsOpen(true)}><Keyboard size={20} /></button>
           <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" onClick={() => setIsSettingsOpen(true)}><Settings size={20} /></button>
@@ -5641,6 +5790,12 @@ return (
             <h1 className="text-[11px] font-black uppercase text-white tracking-widest">{projectName}</h1>
           </div>
           <div className="flex items-center gap-3">
+            <button className="inline-flex mr-15 items-center gap-2 p-2 bg-indigo-600/15 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-amber-400 transition-colors" title="Manage Account & Plans" onClick={() => setIsPlanModalOpen(true)}>
+              <Sparkles size={20} />
+              <span className="text-xs font-bold uppercase tracking-wider pr-1">{plan === 'free' ? 'Get PRO' : plan === 'pro' ? 'Get Ultimate' : 'Manage Plan'}</span>
+            </button>
+
+
             <button 
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all active:scale-95 shadow-lg shadow-red-900/20"
@@ -5681,6 +5836,9 @@ return (
             loadSystemFonts = {loadSystemFonts}
             handleDragStartText = {handleDragStartText}
             isRendering = {isRendering}
+            currentProjectPath = {currentProjectPath}
+            loadAssets={loadAssets}
+            settingsFolder = {settingsFolder}
           />
 
 <div id="twopreview" className="flex-1 flex overflow-hidden min-h-0 bg-[#050505]">

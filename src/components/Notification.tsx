@@ -2,6 +2,7 @@ import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { X, ExternalLink, BellOff, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-shell';
 
 // Interface para que o App.tsx possa controlar o modal
 export interface NotificationsRef {
@@ -20,6 +21,7 @@ const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[
   const [index, setIndex] = useState(0);
   const n = notifications[index];
   const total = notifications.length;
+
 
   return (
     <>
@@ -86,14 +88,19 @@ const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[
             </p>
 
             {n.link && (
-              <a
-                href={n.link}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 mt-6 px-5 py-2.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/60 rounded-xl text-[11px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 transition-all"
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation(); // Garante que não fecha o modal
+                  try {
+                    await open(n.link); // Força o sistema operacional a abrir o navegador
+                  } catch (err) {
+                    console.error("Failed to open link:", err);
+                  }
+                }}
+                className="inline-flex items-center gap-2 mt-6 px-5 py-2.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/60 rounded-xl text-[11px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 transition-all cursor-pointer"
               >
                 {n.link_text || 'View Details'} <ExternalLink size={11} />
-              </a>
+              </button>
             )}
           </div>
 
@@ -144,6 +151,7 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
   const [isOpen, setIsOpen] = useState(false);
   const [spotlightNotifs, setSpotlightNotifs] = useState<any[]>([]);
   const [showSpotlight, setShowSpotlight] = useState(false);
+  const [tryNot, setTryNot] = useState(0);
 
   // Expõe o método toggle para ser chamado via Ref pelo App.tsx
   useImperativeHandle(ref, () => ({
@@ -152,32 +160,48 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
     }
   }));
 
+
+
   useEffect(() => {
     const settingsFolder = localStorage.getItem("wannacut_settings_folder");
     
-    if (settingsFolder) {
-      // Chama o comando Rust enviando o caminho da pasta de settings
-      invoke('check_notifications', { settingsPath: settingsFolder })
-        .then((msgs: any) => {
-          setNotifications(msgs);
-          // Se houver mensagens, avisamos o componente pai para mostrar o alerta (badge)
-          if (msgs.length > 0 && onNewNotifications) {
-            onNewNotifications(true);
-          }
-          // --- SPOTLIGHT: show once per day for update/urgent ---
-          const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-          const lastSeen = localStorage.getItem(SPOTLIGHT_KEY);
-          if (lastSeen !== today) {
-            const highlighted = msgs.filter((n: any) => n.type_ === 'update' || n.type === 'urgent');
-            if (highlighted.length > 0) {
-              setSpotlightNotifs(highlighted);
-              setShowSpotlight(true);
-              localStorage.setItem(SPOTLIGHT_KEY, today);
-            }
-          }
-        })
-        .catch(err => console.error("WannaCut Notification Error:", err));
-    }
+    if (settingsFolder && tryNot < 5) {
+        // Aguarda 60 segundos (60000ms) antes de iniciar a execução
+        setTimeout(() => {
+
+          // Chama o comando Rust enviando o caminho da pasta de settings
+          invoke('check_notifications', { settingsPath: settingsFolder })
+            .then((msgs: any) => {
+              setNotifications(msgs);
+              // Se houver mensagens, avisamos o componente pai para mostrar o alerta (badge)
+              if (msgs.length > 0 && onNewNotifications) {
+                onNewNotifications(true);
+              }
+              // --- SPOTLIGHT: show once per day for update/urgent ---
+              const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+              const lastSeen = localStorage.getItem(SPOTLIGHT_KEY);
+              if (lastSeen !== today) {
+                const highlighted = msgs.filter((n: any) => n.type_ === 'update' || n.type_ === 'urgent');
+                if (highlighted.length > 0) {
+                  setSpotlightNotifs(highlighted);
+                  setShowSpotlight(true);
+                  localStorage.setItem(SPOTLIGHT_KEY, today);
+                }
+              }
+            })
+            .catch(err => {
+              // Emite o erro no console
+              console.error("WannaCut Notification Error:", err);
+              // Como o fluxo caiu no .catch(), a execução do bloco .then() é interrompida automaticamente.
+              // Se você precisar lançar um erro explícito para interromper níveis superiores:
+              // throw new Error(`Notification check failed: ${err}`);
+            });
+        }, 60000 * tryNot); // 60 segundos de delay
+
+        setTryNot(prev => prev +1)
+      }
+
+
   }, [onNewNotifications]);
 
   return (
