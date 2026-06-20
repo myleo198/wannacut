@@ -41,4 +41,5 @@ dirs = "5"
 machine-uid = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
-
+ort = { version = "2.0.0-rc.12", features = ["cuda", "directml"] }
+hound = "3"

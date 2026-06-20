@@ -390,6 +390,9 @@ export function remapKeyframesToSpeed(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+const settingsFolder = localStorage.getItem("wannacut_settings_folder");
+
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [rootPath, setRootPath] = useState<string | null>(null);
@@ -523,7 +526,7 @@ useEffect(() => { console.log('Plan: ', plan)}, [plan])
 
 //Variables for effects
 
-const settingsFolder = localStorage.getItem("wannacut_settings_folder");
+
 
 
 const [hasNewMessages, setHasNewMessages] = useState(false);
@@ -782,49 +785,47 @@ useEffect(() => {
 }, []);
 
 // Efeito para validar a pasta de configurações ao abrir o app
+const checkConfig = async () => {
+  const folder = localStorage.getItem("wannacut_settings_folder");
+  console.log('checkConfig — folder:', folder);
+
+  if (!folder) {
+    setIsSettingsOpen(true);
+    return;
+  }
+
+  try {
+    const content = await invoke('read_settings_file', {
+      path: `${folder}/wannacut_settings.json`
+    }) as string;
+
+    const parsed = JSON.parse(content);
+
+
+    console.log('settings parse', parsed)
+
+    setwannacutSettings(parsed);
+    setRootPath(parsed.workspace ?? null);
+
+    if (!parsed.workspace) {
+      console.warn("Workspace não definido.");
+      setIsSettingsOpen(true);
+    }
+  } catch (e) {
+    // Só abre o modal se o erro for de arquivo não encontrado,
+    // não para qualquer erro (ex: campos extras do plans.rs)
+    console.error("Falha ao ler wannacut_settings.json:", e);
+    setIsSettingsOpen(true);
+  }
+};
+
+// useEffect DEPOIS da declaração da função
 useEffect(() => {
- 
   checkConfig();
 }, []);
 
 
- const checkConfig = async () => {
 
-    console.log('entrou em check configs',localStorage.getItem("wannacut_settings_folder"))
-    const settingsFolder = localStorage.getItem("wannacut_settings_folder");
-    
-
-
-    if (!settingsFolder ) {
-      // Se não existe, força a abertura do modal na aba de config
-      setIsSettingsOpen(true);
-    } else {
-      // Carrega o workspace do JSON para substituir o localStorage antigo
-      try {
-        const content = await invoke('read_settings_file', { 
-          path: `${settingsFolder}/wannacut_settings.json` 
-        }) as string;
-        const parsed = JSON.parse(content);
-        setwannacutSettings(parsed);
-        
-        // Se o workspace estiver vazio, também precisamos alertar o usuário
-        if (!parsed.workspace) {
-           console.warn("Workspace não definido nas configurações.");
-           setIsSettingsOpen(true);
-        }
-
-        console.log('workspace:', parsed.workspace)
-        setRootPath(parsed.workspace)
-        console.log('rootPath está como', parsed.workspace)
-
-
-      } catch (e) {
-        console.error("Falha ao ler wannacut_settings.json");
-        setIsSettingsOpen(true);
-         
-      }
-    }
-  };
 
  
 
@@ -1259,6 +1260,70 @@ const separateAudio = async (clip: Clip) =>
 
 
 }
+
+// ─────────────────────────────────────────────
+// VOCAL REMOVER
+// ─────────────────────────────────────────────
+
+const vocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only' | 'both') => {
+  if (!currentProjectPath || !rootPath) {
+    showNotify('No project loaded', 'error');
+    return;
+  }
+
+  const baseName = clip.name.split('.').slice(0, -1).join('.');
+  const audioSrc = `${currentProjectPath}/extracted_audios/${baseName}.mp3`;
+
+  showNotify('Processing vocals... this may take a moment', 'success');
+
+  try {
+    const result = await invoke<{ vocals?: string; instrumental?: string }>('remove_vocals', {
+      settingsFolder: settingsFolder,
+      workspace: rootPath,
+      audioPath: audioSrc,
+      outputMode: mode,
+    });
+
+    const filesToAdd: { path: string }[] = [];
+    if (result.vocals)       filesToAdd.push({ path: result.vocals });
+    if (result.instrumental) filesToAdd.push({ path: result.instrumental });
+
+    for (const file of filesToAdd) {
+      const filename = file.path.split('/').pop()!;
+      const destPath = `${currentProjectPath}/videos/${filename}`;
+
+      await invoke('copy_file', { source: file.path, destination: destPath });
+
+      setTracks(prev => {
+        const newTrackId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 0;
+
+        const newClip: Clip = {
+          ...clip,
+          id: crypto.randomUUID(),
+          name: filename,
+          color: getRandomColor(),
+          trackId: newTrackId,
+          type: 'audio',
+          mute: false,
+        };
+
+        setClips(prevClips => [...prevClips, newClip]);
+        return [...prev, { id: newTrackId, type: 'audio' as const }];
+      });
+    }
+
+    await loadAssets();
+    showNotify(
+      mode === 'both'             ? 'Vocals and instrumental tracks created!'
+      : mode === 'vocals_only'    ? 'Vocals track created!'
+                                  : 'Instrumental track created!',
+      'success'
+    );
+  } catch (err: any) {
+    console.error('vocalRemover error:', err);
+    showNotify(err?.toString() ?? 'Vocal remover failed', 'error');
+  }
+};
 
 // Derived: is the currently open project being rendered?
 const isRendering = renderingProjects.some(
@@ -3990,7 +4055,7 @@ const createClipOnNewTrack =  async (assetName: string, dropTime: number, beginm
             originalduration: duration,
             color: getRandomColor(),
             trackId: newTrackId,
-            maxduration: duration,
+            maxduration: typeOriginal == 'text' ? 36000 :  duration ? duration : 10,
             beginmoment: beginmoment ? beginmoment : deleteClip ? deleteClip.beginmoment : 0,
             dimensions: dimensions,
             scale: 1,
@@ -4077,6 +4142,8 @@ const handleDropOnEmptyArea = (e: React.DragEvent) => {
     
     // Chamamos a função de criação de nova track passando o tipo explicitamente
     // Note: Adicionei o parâmetro 'whatType' para que a nova track já nasça com o tipo certo
+    
+    
     createClipOnNewTrack(
       finalName, 
       dropTime, 
@@ -4156,13 +4223,13 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
   
   
   // 2. Adjustment: If you have a sidebar of tracks (e.g., 200px), subtract here.
-  const trackSidebarWidth = 0; // Change this if there is a sidebar inside the timeline.
-  const relativeX = mouseX - rect.left - trackSidebarWidth + scrollLeft;
+  const trackSidebarWidth = 200
+  const relativeX = mouseX - rect.left - trackSidebarWidth  + scrollLeft;
   //3. Calculating the time using the updated value of PIXELS_PER_SECOND
   // last term is to calibrate with newzoom
-  const dropTime = Math.max(0, relativeX / PIXELS_PER_SECOND) * (2/pixelsPerSecond);
+  const dropTime = Math.max(0, relativeX /   pixelsPerSecond) // * (2/pixelsPerSecond);
 
-
+  alert('formats' + relativeX + ' ' + dropTime + ' ' + trackSidebarWidth)
 
   
   //console.log(`Mouse X: ${mouseX}, Rect Left: ${rect.left}, Scroll: ${scrollLeft}, Final Time: ${dropTime}`);
@@ -4857,7 +4924,12 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
     const defaultDuration = whatType === 'text' ? 5 : (assetNow ? Math.min(assetNow.duration, 10) : 5);
 
 
-    const totalMaxDuration = whatType === 'text' ? 3600 : (assetNow ? assetNow.duration : 10);
+    const totalMaxDuration = whatType === 'text' ? 36000 : (assetNow ? assetNow.duration : 10);
+
+
+    
+
+
 
     const isBusy = isSpaceOccupied(trackId, dropTime, defaultDuration, null);
     const isWrongType = targetTrack?.type !== whatType;
@@ -6293,6 +6365,7 @@ return (
       COLOR_MAP={COLOR_MAP}
       availableFonts = {availableFonts}
       removeEffectFromClip = {removeEffectFromClip}
+      isRendering = {isRendering}
     />
 
 
@@ -6769,6 +6842,40 @@ return (
                               <Music size={14} className="opacity-70" />
                               <span>{contextMenu?.clip.mute ? 'Recover Audio' : 'Separate Audio'}</span>
                             </button>
+
+                            {/* Vocal Remover with submenu */}
+                            <div className="relative group">
+                              <div className="w-full text-left px-3 py-2 text-sm text-zinc-200 group-hover:bg-zinc-800 transition-colors flex items-center justify-between cursor-default">
+                                <div className="flex items-center gap-3">
+                                  <MicOffIcon size={14} className="opacity-70" />
+                                  <span>Vocal Remover</span>
+                                </div>
+                                <SkipForward size={12} className="opacity-40" />
+                              </div>
+                              <div className="absolute left-[calc(100%-4px)] top-[-6px] invisible group-hover:visible opacity-0 group-hover:opacity-100
+                                min-w-[170px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5
+                                transition-all duration-150 transform translate-x-1 group-hover:translate-x-2">
+                                {([
+                                  { label: 'Vocals Only',       mode: 'vocals_only'      as const, icon: <MicOffIcon size={14} /> },
+                                  { label: 'Instrumental Only', mode: 'instrumental_only' as const, icon: <Music size={14} /> },
+                                  { label: 'Both',              mode: 'both'              as const, icon: <Wind size={14} /> },
+                                ] as const).map(opt => (
+                                  <button
+                                    key={opt.mode}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      vocalRemover(contextMenu.clip, opt.mode);
+                                      setContextMenu(null);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                                  >
+                                    <span className="opacity-50">{opt.icon}</span>
+                                    <span>{opt.label}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
                             <div className="h-[1px] bg-white/5 my-1 mx-2" />
                           </>
                         )}

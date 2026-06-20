@@ -75,6 +75,8 @@ interface PropertiesAsideProps {
   COLOR_MAP: Record<string, string>;
   availableFonts: string [];
   removeEffectFromClip: void;
+  isRendering: boolean;
+  
 }
 
 
@@ -944,7 +946,8 @@ export const PropertiesAside = ({
   knowTypeByAssetName,
   COLOR_MAP,
   availableFonts,
-  removeEffectFromClip
+  removeEffectFromClip,
+  isRendering
 }: PropertiesAsideProps) => {
 
 const COLOR_PALETTE: Record<string, string> = {
@@ -1070,7 +1073,8 @@ const resolveColor = (input: string): string => {
 
 
   return (
-    <aside className="flex flex-col h-full bg-[#090909] border-l border-white/10 overflow-hidden" style={{ width: 300 }}>
+    <aside className={`flex flex-col h-full bg-[#090909] border-l border-white/10 overflow-hidden 
+    ${isRendering ? 'opacity-40 pointer-events-none select-none' : ''}`} style={{ width: 300 }}>
       
       {/* HEADER NAV HORIZONTAL */}
       <div className="flex items-center px-2 pt-4 border-b border-white/5">

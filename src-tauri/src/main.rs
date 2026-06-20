@@ -51,6 +51,11 @@ pub struct YtDlpState(pub Mutex<Option<std::process::Child>>);
 pub struct YtDlpPid(pub AtomicU32); // 0 = nenhum processo ativo
 
 mod plans;
+mod limits;
+mod vocal_remover;
+
+
+
 
 
 
@@ -2003,6 +2008,9 @@ fn main() {
             plans::activate_license,
             plans::get_license_state,
             plans::deactivate_license,
+            vocal_remover::vocal_remover_model_exists,
+            vocal_remover::vocal_remover_download_model,
+            vocal_remover::remove_vocals,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
