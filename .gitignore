@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 /src-tauri/bin
+/src-tauri/src/plans.rs
 /src/renderBridge.tsx
 # Editor directories and files
 .vscode/*

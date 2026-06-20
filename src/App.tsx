@@ -457,6 +457,69 @@ export default function App() {
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [plan, setPlan] = useState<'free' | 'pro' | 'ultimate'>('free');
 
+  const [selectedUpgrade, setSelectedUpgrade] = useState<'pro' | 'ultimate' | null>(null);
+  const [activationKey, setActivationKey] = useState('');
+//PART OF PLANS
+
+const activateLicense = async () => {
+
+  console.log(`Ativando chave ${activationKey} para o plano ${selectedUpgrade}`)
+  
+  try {
+    const result = await invoke("activate_license", {
+      settingsFolder: settingsFolder,
+      licenseKey: activationKey,
+    });
+
+    console.log(result);
+
+    setIsPlanModalOpen(false);
+    setPlan('pro')
+
+
+    window.location.reload();
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+
+
+// ... dentro do seu componente principal:
+
+useEffect(() => {
+  const validate_offline = async () => {
+    try {
+      // Invoca o comando seguro no backend em Rust
+      const result = await invoke("get_license_state", {
+        settingsFolder: settingsFolder,
+      });
+
+      console.log('Autenticação offline executada com sucesso:', result);
+      
+      // Atualiza o plano global baseado no token descriptografado pelo Rust
+      if (result && result.plan) {
+        setPlan(result.plan);
+      }
+    } catch (err) {
+      // Se der erro (ex: arquivo não existe ou token inválido), mantém o plano como 'free'
+      console.error("Erro na validação de licença offline (Usuário Free):", err);
+      setPlan('free'); 
+    }
+  };
+
+  // Executa a validação assim que o Tauri abrir a janela do frontend
+  validate_offline();
+}, []); // <-- Array vazia garante que só roda UMA vez ao abrir o app
+
+useEffect(() => { console.log('Plan: ', plan)}, [plan])
+
+
+
+
+
+
+
 
 //Variables for effects
 
@@ -5509,16 +5572,21 @@ return (
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={() => setIsPlanModalOpen(false)}
+        onClick={() => {
+          setIsPlanModalOpen(false);
+          setSelectedUpgrade(null);
+          setActivationKey('');
+        }}
         className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-md"
       />
 
       {/* Card do Modal */}
       <motion.div
+        layout // Faz o modal expandir o tamanho com animação suave
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] w-full max-w-sm bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] w-full max-w-sm bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -5527,58 +5595,107 @@ return (
             <h2 className="text-sm font-bold text-zinc-200 mt-0.5">Subscription Plan</h2>
           </div>
           <button 
-            onClick={() => setIsPlanModalOpen(false)}
+            onClick={() => {
+              setIsPlanModalOpen(false);
+              setSelectedUpgrade(null);
+              setActivationKey('');
+            }}
             className="p-1.5 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 rounded-full transition-colors cursor-pointer"
           >
             <X size={14} />
           </button>
         </div>
 
-        {/* Status do Plano Atual */}
-        <div className="bg-zinc-950 border border-zinc-800/60 rounded-xl p-4 mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Current Status</p>
-            <p className="text-sm font-black uppercase tracking-widest mt-0.5 text-white">
-              {plan === 'ultimate' ? '🚀 Ultimate' : plan === 'pro' ? '💎 Pro' : '🌱 Free Plan'}
-            </p>
+        {/* Status do Plano Atual (Ocultado se estiver ativando para focar no input) */}
+        {!selectedUpgrade && (
+          <div className="bg-zinc-950 border border-zinc-800/60 rounded-xl p-4 mb-6 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Current Status</p>
+              <p className="text-sm font-black uppercase tracking-widest mt-0.5 text-white">
+                {plan === 'ultimate' ? '🚀 Ultimate' : plan === 'pro' ? '💎 Pro' : '🌱 Free Plan'}
+              </p>
+            </div>
+            <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full 
+              ${plan === 'free' ? 'bg-zinc-800 text-zinc-400' : 'bg-gradient-to-r from-amber-500/20 to-rose-500/20 border border-rose-500/30 text-rose-400'}`}
+            >
+              {plan === 'free' ? 'Limited' : 'Active'}
+            </span>
           </div>
-          
-          {/* Tag visual de destaque */}
-          <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full 
-            ${plan === 'free' ? 'bg-zinc-800 text-zinc-400' : 'bg-gradient-to-r from-amber-500/20 to-rose-500/20 border border-rose-500/30 text-rose-400'}`}
+        )}
+
+        {/* LISTA DE OPÇÕES (Se nenhuma foi selecionada ainda) */}
+        {!selectedUpgrade ? (
+          <div className="space-y-3">
+            {/* Botão de Upgrade Pro */}
+            {plan === 'free' && (
+              <button
+                onClick={() => setSelectedUpgrade('pro')}
+                className="w-full text-left border border-zinc-800 bg-white/[0.01] hover:bg-white/[0.03] rounded-xl p-3.5 hover:border-zinc-700 transition-all cursor-pointer block"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-zinc-200">Upgrade to Pro</p>
+                  <span className="text-[10px] font-semibold text-zinc-500">10 Splits/Day</span>
+                </div>
+                <p className="text-[10px] text-zinc-500 mt-1">Perfect for growing digital creators.</p>
+              </button>
+            )}
+
+            {/* Botão de Upgrade Ultimate */}
+            {(plan === 'free' || plan === 'pro') && (
+              <button
+                onClick={() => setSelectedUpgrade('ultimate')}
+                className="w-full text-left border border-zinc-800 bg-gradient-to-br from-amber-500/[0.01] to-rose-500/[0.01] hover:bg-gradient-to-br hover:from-amber-500/[0.03] hover:to-rose-500/[0.03] rounded-xl p-3.5 hover:border-rose-500/20 transition-all group cursor-pointer block"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400 group-hover:brightness-110 transition-all">Upgrade to Ultimate</p>
+                  <span className="text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded-md tracking-wider">UNLIMITED</span>
+                </div>
+                <p className="text-[10px] text-zinc-500 mt-1">Full speed, no barriers, max performance.</p>
+              </button>
+            )}
+          </div>
+        ) : (
+          /* FORMULÁRIO DE ATIVAÇÃO DE CHAVE */
+          <motion.div 
+            initial={{ opacity: 0, y: 5 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            className="space-y-4"
           >
-            {plan === 'free' ? 'Limited' : 'Active'}
-          </span>
-        </div>
+            {/* Botão de Voltar */}
+            <button 
+              onClick={() => { setSelectedUpgrade(null); setActivationKey(''); }}
+              className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              ← Back to plans
+            </button>
 
-        {/* Seções de Opções Disponíveis (Lógica Condicional Baseada no Estado) */}
-        <div className="space-y-3">
-          
-          {/* Se for FREE, pode migrar para o PRO */}
-          {plan === 'free' && (
-            <div className="border border-zinc-800 bg-white/[0.01] rounded-xl p-3.5 hover:border-zinc-700 transition-all">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-zinc-200">Upgrade to Pro</p>
-                <span className="text-[10px] font-semibold text-zinc-500">10 Splits/Day</span>
-              </div>
-              <p className="text-[10px] text-zinc-500 mt-1">Perfect for growing digital creators.</p>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block mb-1.5">
+                Enter {selectedUpgrade === 'ultimate' ? '🚀 Ultimate' : '💎 Pro'} Activation Key
+              </label>
+              <input
+                type="text"
+                value={activationKey}
+                onChange={(e) => setActivationKey(e.target.value)}
+                placeholder= {selectedUpgrade === 'pro' ? 'WC-PRO-XXXX-XXXX...' : '"WC-ULT-XXXX-XXXX..."'}
+                className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500/50 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 placeholder-zinc-700 outline-none transition-all font-mono"
+              />
             </div>
-          )}
 
-          {/* Se for FREE ou PRO, pode migrar para o ULTIMATE */}
-          {(plan === 'free' || plan === 'pro') && (
-            <div className="border border-zinc-800 bg-gradient-to-br from-amber-500/[0.02] to-rose-500/[0.02] rounded-xl p-3.5 hover:border-rose-500/20 transition-all group">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400 group-hover:brightness-110 transition-all">Upgrade to Ultimate</p>
-                <span className="text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded-md tracking-wider">UNLIMITED</span>
-              </div>
-              <p className="text-[10px] text-zinc-500 mt-1">Full speed, no barriers, max performance.</p>
-            </div>
-          )}
+            {/* Botão de Ativação (Função onClick vazia para você implementar a lógica depois) */}
+            <button
+              onClick={() => activateLicense()}
+              className="w-full bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-black uppercase tracking-widest py-2.5 rounded-xl transition-all cursor-pointer shadow-lg"
+            >
+              Activate License
+            </button>
+          </motion.div>
+        )}
 
-          {/* Nota Informativa sobre como adquirir chaves */}
+        {/* Links do rodapé e Cancelamento */}
+        <div className="mt-6 pt-4 border-t border-zinc-800/60 space-y-3">
           {plan !== 'ultimate' && (
-            <div className="pt-2 text-center">
+            <div className="text-center">
               <p className="text-[10px] text-zinc-500 leading-relaxed">
                 Get your activation key instantly at:<br/>
                 <a 
@@ -5593,9 +5710,8 @@ return (
             </div>
           )}
 
-          {/* Opção de Cancelamento (Visível apenas para planos pagos PRO e ULTIMATE) */}
-          {(plan === 'pro' || plan === 'ultimate') && (
-            <div className="pt-4 border-t border-zinc-800 text-center">
+          {(plan === 'pro' || plan === 'ultimate') && !selectedUpgrade && (
+            <div className="text-center">
               <button 
                 onClick={() => console.log("Ação de cancelamento futura")} 
                 className="text-[9px] uppercase font-black tracking-widest text-zinc-600 hover:text-rose-400 transition-colors cursor-pointer"
@@ -5604,7 +5720,6 @@ return (
               </button>
             </div>
           )}
-
         </div>
       </motion.div>
     </>

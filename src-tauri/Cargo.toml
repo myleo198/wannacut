@@ -21,18 +21,24 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-localhost = "2.0.0" # Verifique a versão compatível com seu Tauri
 percent-encoding = "2.3"
 tiny_http = "0.12"
-base64 = "0.21"
 tokio = { version = "1", features = ["full"] }
 image = "0.24"
 fs_extra = "1.3.0"
-reqwest = { version = "0.13.2", features = ["json"] }
 tauri-plugin-notification = "2"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+ed25519-dalek = { version = "2", features = ["serde"] }
+base64 = "0.22"
+dirs = "5"
+machine-uid = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
 

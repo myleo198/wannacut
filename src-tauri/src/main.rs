@@ -50,6 +50,8 @@ pub struct YtDlpState(pub Mutex<Option<std::process::Child>>);
 
 pub struct YtDlpPid(pub AtomicU32); // 0 = nenhum processo ativo
 
+mod plans;
+
 
 
 
@@ -1947,6 +1949,7 @@ fn main() {
         // Custom protocol for serving local video files with range-request support
         .manage(ExportState(Mutex::new(None)))
         .manage(YtDlpPid(std::sync::atomic::AtomicU32::new(0)))
+
         .invoke_handler(tauri::generate_handler![
             save_export_frame,
             save_export_audio,
@@ -1996,7 +1999,10 @@ fn main() {
             search_freesound,
             download_freesound,
             read_freesound_api_key,
-            save_freesound_api_key
+            save_freesound_api_key,
+            plans::activate_license,
+            plans::get_license_state,
+            plans::deactivate_license,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
