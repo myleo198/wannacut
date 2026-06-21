@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Diamond, DiamondPlus, Video, Volume2, Type, Settings2, 
-  Wind, Layers, ChevronDown, Sparkles, X 
+  Wind, Layers, ChevronDown, Sparkles, X,
+  AlignLeft, AlignCenter, AlignRight
 } from 'lucide-react';
 import { motion, AnimatePresence, number } from 'framer-motion';
 import {converterSpeed, reverterSpeed, convertDB, convertZoom} from '@/App'
@@ -244,6 +245,34 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
               </PropertyRow>
 
 
+
+              {/* TEXT ALIGNMENT */}
+              <PropertyRow label="Text Align" keyframable={false}>
+                <div className="flex gap-1">
+                  {([
+                    { value: 'left',   icon: AlignLeft   },
+                    { value: 'center', icon: AlignCenter },
+                    { value: 'right',  icon: AlignRight  },
+                  ] as const).map(({ value, icon: Icon }) => {
+                    const active = (selectedClip.text_align || 'center') === value;
+                    return (
+                      <button
+                        key={value}
+                        onClick={() => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, text_align: value } : c))}
+                        className="flex-1 flex items-center justify-center py-1 rounded border transition-all"
+                        style={{
+                          borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.08)',
+                          background:  active ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
+                          color:       active ? '#f59e0b' : '#71717a',
+                        }}
+                        title={value.charAt(0).toUpperCase() + value.slice(1)}
+                      >
+                        <Icon size={12} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </PropertyRow>
 
               <PropertyRow 
                 label={

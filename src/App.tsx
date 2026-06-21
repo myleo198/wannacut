@@ -67,7 +67,9 @@ import {
   Bell,
   Keyboard,
   ArrowDownToLine,
-  ExternalLink
+  ExternalLink,
+  Copy,
+  ClipboardPaste
   
 } from 'lucide-react';
 
@@ -449,6 +451,7 @@ export default function App() {
 
   // const to move position grafically
   const [showContextMenu, setShowContextMenu] = useState<{ x: number, y: number } | null>(null);
+  const [frameSubmenuOpen, setFrameSubmenuOpen] = useState(false);
   const [interactionMode, setInteractionMode] = useState<'none' | 'transform' | 'crop'>('none');
 
   // Refs para lógica de motor (Não disparam re-render, mantêm a fluidez)
@@ -486,6 +489,94 @@ const activateLicense = async () => {
   }
 };
 
+
+//PART TO COPY AND PASTE EFFECTS
+
+const [copiedEffects, setcopiedEffects ] = useState<any>({});
+
+const pasteEffects = (target_clip:Clip) => 
+{
+
+
+    if (copiedEffects.effects) {
+      target_clip.effects = {
+        ...target_clip.effects, // Mantém os efeitos atuais
+        ...copiedEffects.effects // Sobrescreve/Adiciona os novos (os novos ganham se houver conflito de chave)
+      };
+    }
+
+    // 2. Merge de Keyframes
+    if (copiedEffects.keyframes) {
+      target_clip.keyframes = {
+        ...target_clip.keyframes,
+        ...copiedEffects.keyframes
+      };
+    }
+
+
+    if(copiedEffects.fadein)  
+      target_clip.fadein = copiedEffects.fadein
+
+
+    if(copiedEffects.fadeout)  
+      target_clip.fadeout = copiedEffects.fadeout
+
+
+    if(copiedEffects.fadeinAudio)  
+      target_clip.fadeinAudio = copiedEffects.fadeinAudio
+
+    if(copiedEffects.fadeoutAudio)  
+      target_clip.fadeoutAudio = copiedEffects.fadeoutAudio
+
+
+
+    setClips( prev => prev.map( c => c.id == target_clip.id ? target_clip : c ))
+
+
+
+
+}
+
+
+const pasteEffectsTrack = (target_track: number) => {
+  setClips((prevClips) =>
+    prevClips.map((clip) => {
+      // Verifica se o clipe pertence à track alvo
+      if (clip.trackId !== target_track) {
+        return clip;
+      }
+
+      // Cria uma cópia do clipe para mutar com segurança
+      const updatedClip = { ...clip };
+
+      // 1. Merge de Efeitos (Array de objetos)
+      if (copiedEffects.effects) {
+        updatedClip.effects = [
+          ...(updatedClip.effects || []), // Mantém os existentes
+          ...copiedEffects.effects        // Adiciona os novos
+        ];
+      }
+
+      // 2. Merge de Keyframes (Objeto)
+      if (copiedEffects.keyframes) {
+        updatedClip.keyframes = {
+          ...(updatedClip.keyframes || {}), // Mantém os existentes
+          ...copiedEffects.keyframes        // Sobrescreve com os novos
+        };
+      }
+
+      // 3. Fades (Simples atribuição)
+      /*
+      if (copiedEffects.fadein) updatedClip.fadein = copiedEffects.fadein;
+      if (copiedEffects.fadeout) updatedClip.fadeout = copiedEffects.fadeout;
+      if (copiedEffects.fadeinAudio) updatedClip.fadeinAudio = copiedEffects.fadeinAudio;
+      if (copiedEffects.fadeoutAudio) updatedClip.fadeoutAudio = copiedEffects.fadeoutAudio;
+      */
+
+      return updatedClip;
+    })
+  );
+};
 
 
 // ... dentro do seu componente principal:
@@ -880,6 +971,7 @@ const handleSaveSettings = async (newSettings: ProjectSettings) => {
   
     // Default zoom: 100 pixels represents 1 second
   const [pixelsPerSecond, setPixelsPerSecond] = useState(10);
+  const pixelsPerSecondRef = useRef(10); // mirrors pixelsPerSecond for use inside closures/event listeners
 
   // Limits to prevent the timeline from disappearing or becoming infinite
   const MIN_ZOOM = 1;
@@ -2498,6 +2590,9 @@ const MAX_HISTORY_STEPS = 100;
 
 
   useEffect(() => {
+  // Keep ref in sync so closures (e.g. handleNativeDrop) always read the latest value
+  pixelsPerSecondRef.current = pixelsPerSecond;
+
   // Whenever the zoom changes, we visually reposition the needle.
   if (playheadRef.current) {
     const currentPos = currentTimeRef.current * pixelsPerSecond;
@@ -4195,6 +4290,8 @@ const order_tracks = () =>
 const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number) => {
   if (!currentProjectPath) return;
 
+
+
   //console.log('nativedrop')
 
   const timelineBounds = timelineContainerRef.current.getBoundingClientRect();
@@ -4204,8 +4301,6 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
     mouseX > timelineBounds.right || 
     mouseY < timelineBounds.top || 
     mouseY > timelineBounds.bottom;
-
-
 
 
 
@@ -4223,14 +4318,14 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
   
   
   // 2. Adjustment: If you have a sidebar of tracks (e.g., 200px), subtract here.
-  const trackSidebarWidth = 200
+  const trackSidebarWidth = 192
   const relativeX = mouseX - rect.left - trackSidebarWidth  + scrollLeft;
   //3. Calculating the time using the updated value of PIXELS_PER_SECOND
   // last term is to calibrate with newzoom
-  const dropTime = Math.max(0, relativeX /   pixelsPerSecond) // * (2/pixelsPerSecond);
+  //let factor = pixelsPerSecond > 30 ? (2 * pixelsPerSecond) : 0
+  const dropTime = Math.max(0, relativeX/pixelsPerSecondRef.current) 
 
-  alert('formats' + relativeX + ' ' + dropTime + ' ' + trackSidebarWidth)
-
+  
   
   //console.log(`Mouse X: ${mouseX}, Rect Left: ${rect.left}, Scroll: ${scrollLeft}, Final Time: ${dropTime}`);
   
@@ -6170,7 +6265,7 @@ return (
 
       {showContextMenu && (
                   <div 
-                    className="absolute z-[100] bg-[#050505] border border-zinc-800 rounded-lg shadow-2xl p-1 w-52 overflow-hidden"
+                    className="absolute z-[100] bg-[#050505] border border-zinc-800 rounded-lg shadow-2xl p-1 w-52"
                     style={{ top: showContextMenu.y, left: showContextMenu.x }}
                     onClick={(e) => e.stopPropagation()} // Impede o fechamento ao clicar no menu
                   >
@@ -6206,6 +6301,167 @@ return (
                     >
                       <X size={14} /> Clear Mode
                     </button>
+
+                    {/* Divider */}
+                    <div className="border-t border-zinc-900 my-1" />
+
+                    {/* Add Frame to Project */}
+                    <div
+                      className="relative"
+                      onMouseEnter={() => setFrameSubmenuOpen(true)}
+                      onMouseLeave={() => setFrameSubmenuOpen(false)}
+                    >
+                      <button
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <ImageIcon size={14} className="group-hover:scale-110 transition-transform" />
+                          Add Frame to Project
+                        </div>
+                        <ChevronDown size={10} className="-rotate-90 opacity-50" />
+                      </button>
+
+                      {frameSubmenuOpen && (
+                        <div className="absolute left-full top-0 ml-1 bg-[#050505] border border-zinc-800 rounded-lg shadow-2xl p-1 w-52 z-[110]">
+                          {/* Option 1: Add to Assets only */}
+                          <button
+                            onClick={async () => {
+                              setShowContextMenu(null);
+                              setFrameSubmenuOpen(false);
+                              try {
+                                if (!rendererRef.current || !drawFrameEngine.current || !currentProjectPath) return;
+                                const W = projectConfig.width;
+                                const H = projectConfig.height;
+                                const rt = new THREE.WebGLRenderTarget(W, H, {
+                                  format: THREE.RGBAFormat,
+                                  type: THREE.UnsignedByteType,
+                                  colorSpace: THREE.SRGBColorSpace,
+                                });
+                                rendererRef.current.setRenderTarget(rt);
+                                await drawFrameEngine.current({
+                                  time: currentTime, projectConfig, currentProjectPath,
+                                  sceneRef, rendererRef, cameraRef, topClips, groupsRef,
+                                  getInterpolatedValueWithFades, invoke, settingsFolder,
+                                  topAudios, isPlaying: false,
+                                });
+                                const pixels = new Uint8Array(W * H * 4);
+                                rendererRef.current.readRenderTargetPixels(rt, 0, 0, W, H, pixels);
+                                rendererRef.current.setRenderTarget(null);
+                                rt.dispose();
+                                // Y-flip (WebGL origin is bottom-left)
+                                const rowSize = W * 4;
+                                const flipped = new Uint8ClampedArray(pixels.length);
+                                for (let y = 0; y < H; y++) {
+                                  flipped.set(pixels.subarray((H - 1 - y) * rowSize, (H - y) * rowSize), y * rowSize);
+                                }
+                                const aux = document.createElement('canvas');
+                                aux.width = W; aux.height = H;
+                                aux.getContext('2d')!.putImageData(new ImageData(flipped, W, H), 0, 0);
+                                const pngBase64 = aux.toDataURL('image/png');
+                                aux.remove();
+                                const fileName = `frame_${Date.now()}.png`;
+                                await invoke('save_frame_as_asset', {
+                                  projectPath: currentProjectPath,
+                                  fileName,
+                                  pngBase64,
+                                });
+                                await loadAssets();
+                                showNotify('Frame saved to assets!', 'success');
+                              } catch (err: any) {
+                                showNotify(err?.toString() ?? 'Failed to save frame', 'error');
+                              }
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all"
+                          >
+                            <ArrowDownToLine size={13} />
+                            Add to Assets
+                          </button>
+
+                          {/* Option 2: Add to Assets and insert clip */}
+                          <button
+                            onClick={async () => {
+                              setShowContextMenu(null);
+                              setFrameSubmenuOpen(false);
+                              try {
+                                if (!rendererRef.current || !drawFrameEngine.current || !currentProjectPath) return;
+                                const W = projectConfig.width;
+                                const H = projectConfig.height;
+                                const rt = new THREE.WebGLRenderTarget(W, H, {
+                                  format: THREE.RGBAFormat,
+                                  type: THREE.UnsignedByteType,
+                                  colorSpace: THREE.SRGBColorSpace,
+                                });
+                                rendererRef.current.setRenderTarget(rt);
+                                await drawFrameEngine.current({
+                                  time: currentTime, projectConfig, currentProjectPath,
+                                  sceneRef, rendererRef, cameraRef, topClips, groupsRef,
+                                  getInterpolatedValueWithFades, invoke, settingsFolder,
+                                  topAudios, isPlaying: false,
+                                });
+                                const pixels = new Uint8Array(W * H * 4);
+                                rendererRef.current.readRenderTargetPixels(rt, 0, 0, W, H, pixels);
+                                rendererRef.current.setRenderTarget(null);
+                                rt.dispose();
+                                const rowSize = W * 4;
+                                const flipped = new Uint8ClampedArray(pixels.length);
+                                for (let y = 0; y < H; y++) {
+                                  flipped.set(pixels.subarray((H - 1 - y) * rowSize, (H - y) * rowSize), y * rowSize);
+                                }
+                                const aux = document.createElement('canvas');
+                                aux.width = W; aux.height = H;
+                                aux.getContext('2d')!.putImageData(new ImageData(flipped, W, H), 0, 0);
+                                const pngBase64 = aux.toDataURL('image/png');
+                                aux.remove();
+                                const fileName = `frame_${Date.now()}.png`;
+                                await invoke('save_frame_as_asset', {
+                                  projectPath: currentProjectPath,
+                                  fileName,
+                                  pngBase64,
+                                });
+                                await loadAssets();
+
+                                // Create new clip at currentTime
+                                setTracks(prev => {
+                                  const newTrackId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 0;
+                                  const newClip: Clip = {
+                                    id: crypto.randomUUID(),
+                                    name: fileName,
+                                    start: currentTime,
+                                    duration: 5,
+                                    originalduration: 5,
+                                    color: getRandomColor(),
+                                    trackId: newTrackId,
+                                    maxduration: 36000,
+                                    beginmoment: 0,
+                                    dimensions: null,
+                                    scale: 1,
+                                    type: 'image',
+                                    font: null,
+                                    font_size: null,
+                                    font_shine: null,
+                                    font_color: '#ffffff',
+                                    mute: false,
+                                    opacity: 1,
+                                    bg_dimetions: null,
+                                    activeKeyframeView: null,
+                                  } as any;
+                                  setClips(prev => [...prev, newClip]);
+                                  return [...prev, { id: newTrackId, type: 'image' as any }];
+                                });
+
+                                showNotify('Frame added to timeline!', 'success');
+                              } catch (err: any) {
+                                showNotify(err?.toString() ?? 'Failed to insert frame', 'error');
+                              }
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all"
+                          >
+                            <DiamondPlus size={13} />
+                            Add to Assets &amp; Insert Here
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
          )}
 
@@ -6505,15 +6761,31 @@ return (
       }}
 
     >
-      {[...Array(150)].map((_, i) => {
-        const timeInSeconds = i * 5;
-        return (
-          <div key={i} className="absolute border-l border-zinc-800/50 h-full text-[8px] pl-1 pt-1 text-zinc-500 font-mono pointer-events-none" style={{ left: timeInSeconds * pixelsPerSecond }}>
-            {timeInSeconds % 30 === 0 ? formatTime(timeInSeconds) : ''}
-            <div className="absolute top-0 left-0 h-2 border-l border-zinc-700" />
-          </div>
-        );
-      })}
+      {(() => {
+        // Choose tick interval so marks are always ~80px apart
+        const targetPx = 80;
+        const rawInterval = targetPx / pixelsPerSecond;
+        const niceIntervals = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+        const tickInterval = niceIntervals.find(v => v >= rawInterval) ?? 600;
+        const labelEvery = tickInterval < 1 ? 10 : tickInterval < 10 ? 5 : 2;
+        const totalDuration = 750;
+        const tickCount = Math.ceil(totalDuration / tickInterval) + 1;
+
+        return [...Array(tickCount)].map((_, i) => {
+          const timeInSeconds = i * tickInterval;
+          const showLabel = i % labelEvery === 0;
+          return (
+            <div
+              key={i}
+              className="absolute border-l border-zinc-800/50 h-full text-[8px] pl-1 pt-1 text-zinc-500 font-mono pointer-events-none"
+              style={{ left: timeInSeconds * pixelsPerSecond }}
+            >
+              {showLabel ? formatTime(timeInSeconds) : ''}
+              <div className="absolute top-0 left-0 h-2 border-l border-zinc-700" />
+            </div>
+          );
+        });
+      })()}
     </div>
   </div>
 
@@ -6690,6 +6962,19 @@ return (
               <BrushCleaning size={14} className="opacity-70" />
               <span>Clean Empty Space</span>
             </button>
+
+            <button
+              onClick={() => {
+                pasteEffectsTrack(trackContextMenu.trackId);
+                setTrackContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
+            >
+              <ClipboardPaste size={14} className="opacity-70" />
+              <span>Paste Effects and Keyframes </span>
+            </button>
+
+
           </div>
         );
       })()}
@@ -6832,6 +7117,34 @@ return (
                         {/* Opção: Separate/Recover Audio (Apenas Vídeo) */}
                         {contextMenu?.type === 'video' && (
                           <>
+
+
+                            <button 
+                              onClick={() => {
+                                setcopiedEffects(contextMenu.clip)
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                            >
+                              <Copy size={14} className="opacity-70" />
+                              <span> Copy Effects and Fades </span>
+                            </button>
+
+
+                            {
+                              copiedEffects && Object.keys(copiedEffects).length > 0 && 
+
+                                <button 
+                                  onClick={() => {
+                                    pasteEffects(contextMenu.clip)
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                                >
+                                  <ClipboardPaste size={14} className="opacity-70" />
+                                  <span> Paste Effects and Fades </span>
+                                </button>
+                            }
+
+
                             <button 
                               onClick={() => {
                                 separateAudio(contextMenu?.clip);

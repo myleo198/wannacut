@@ -27,7 +27,13 @@ use crate::plans::{validate_offline, Plan};
 // CONSTANTS
 // ─────────────────────────────────────────────
 
-const MODEL_URL: &str = "https://wannacut.app/models/htdemucs.bin";
+#[cfg(target_os = "linux")]
+const ENGINE_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/engines/htdemucs_inference_linux";
+#[cfg(target_os = "windows")]
+const ENGINE_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/engines/htdemucs_inference_windows.exe";
+
+const MODEL_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/models/htdemucs.safetensors";
+
 const MODEL_FILENAME: &str = "htdemucs.bin";
 const USAGE_KEY_VOCAL: &str = "usage_vocal_remover";
 

@@ -1811,6 +1811,33 @@ fn main() {
         Ok(())
     }
 
+    /// Salva um frame PNG (base64) diretamente na pasta de assets do projeto (videos/).
+    /// Usado pelo menu "Add Frame to Project" no editor.
+    #[tauri::command]
+    async fn save_frame_as_asset(
+        project_path: String,
+        file_name: String,
+        png_base64: String,
+    ) -> Result<(), String> {
+        use base64::{engine::general_purpose, Engine as _};
+
+        let videos_dir = std::path::Path::new(&project_path).join("videos");
+        std::fs::create_dir_all(&videos_dir)
+            .map_err(|e| format!("Erro ao criar pasta de assets: {}", e))?;
+
+        let file_path = videos_dir.join(&file_name);
+
+        let b64_data = png_base64.split(',').last().unwrap_or(&png_base64);
+        let bytes = general_purpose::STANDARD
+            .decode(b64_data)
+            .map_err(|e| format!("Erro ao decodificar base64 do frame: {}", e))?;
+
+        std::fs::write(&file_path, bytes)
+            .map_err(|e| format!("Erro ao salvar frame como asset: {}", e))?;
+
+        Ok(())
+    }
+
     /// Salva o WAV de áudio gerado pelo OfflineAudioContext do frontend.
     /// O frontend já faz todo o mix, efeitos e volume — o Rust só guarda o arquivo.
     #[tauri::command]
@@ -1957,6 +1984,7 @@ fn main() {
 
         .invoke_handler(tauri::generate_handler![
             save_export_frame,
+            save_frame_as_asset,
             save_export_audio,
             assemble_exported_video,
             list_projects,
