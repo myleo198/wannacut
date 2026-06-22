@@ -177,11 +177,26 @@ export interface Clip {
   font_bgcolor?: string | null;
   bg_dimetions?: Position |null; //for text background
   font_shine?: Font_Shine | null;
-  
+  text_align?: 'left' | 'center' | 'right' | null;
 
+  // Mask properties (static defaults; individual props overridden per-frame by mask.* keyframes)
+  mask?: {
+    type?: string;
+    x?: number;
+    y?: number;
+    scaleX?: number;
+    scaleY?: number;
+    rotation?: number;
+    feather?: number;
+    cornerRadius?: number;
+    invert?: boolean;
+  } | null;
 
-activeKeyframeView?: 'volume' | 'opacity' | 'speed' | 'rotation3d'| 'position' | 'zoom' | null;
-
+activeKeyframeView?:
+  | 'volume' | 'opacity' | 'speed' | 'rotation3d' | 'position' | 'zoom'
+  | 'mask.x' | 'mask.y' | 'mask.scaleX' | 'mask.scaleY'
+  | 'mask.rotation' | 'mask.feather' | 'mask.cornerRadius'
+  | null;
 
 }
 
@@ -1184,6 +1199,7 @@ useEffect(() => {
 //context menu of clips (right click mouse)
 
 const [contextMenu, setContextMenu] = useState<{ x: number, y: number, type: any, clip: Clip } | null>(null);
+const [activeSubmenu, setActiveSubmenu] = useState<'vocalRemover' | 'keyframable' | 'mask' | null>(null);
 const [trackContextMenu, setTrackContextMenu] = useState<{
   x: number;
   y: number;
@@ -1241,7 +1257,7 @@ const handleContextMenu = (e: React.MouseEvent, type: any, clip: Clip) => {
 
 // Fecha o menu ao clicar em qualquer outro lugar
 useEffect(() => {
-  const closeMenu = () => setContextMenu(null);
+  const closeMenu = () => { setContextMenu(null); setActiveSubmenu(null); };
   window.addEventListener('click', closeMenu);
   return () => window.removeEventListener('click', closeMenu);
 }, []);
@@ -1868,16 +1884,26 @@ const getInterpolatedValueWithFades = (
   timeFull: number, 
   clip: any, 
   type: 'opacity' | 'volume' | 'speed' | 'zoom' | 'position' | 'rotation3d'
+    | 'mask.x' | 'mask.y' | 'mask.scaleX' | 'mask.scaleY'
+    | 'mask.rotation' | 'mask.feather' | 'mask.cornerRadius'
 ): any => {
   
   const getDefaultValue = () => {
     switch (type) {
-      case 'volume': return 0; // 0dB é o volume original (unidade)
+      case 'volume': return 0;
       case 'zoom': return 1.0;
       case 'position': return { x: 0, y: 0 };
       case 'rotation3d': return { rot: 0, rot3d: 0 };
       case 'speed': return 1.0;
       case 'opacity': return 1.0;
+      // Mask defaults — fall back to clip.mask static value if present
+      case 'mask.x':            return clip.mask?.x            ?? 0;
+      case 'mask.y':            return clip.mask?.y            ?? 0;
+      case 'mask.scaleX':       return clip.mask?.scaleX       ?? 1;
+      case 'mask.scaleY':       return clip.mask?.scaleY       ?? 1;
+      case 'mask.rotation':     return clip.mask?.rotation     ?? 0;
+      case 'mask.feather':      return clip.mask?.feather      ?? 0;
+      case 'mask.cornerRadius': return clip.mask?.cornerRadius ?? 0;
       default: return 0;
     }
   };
@@ -5400,7 +5426,9 @@ const handleClipMouseMove = (e: React.MouseEvent, clip: Clip) => {
 
 const updateKeyframes = (
   clip: Clip,
-  type: 'opacity' | 'volume' | 'speed' | 'position' | 'rotation3d' | 'zoom',
+  type: 'opacity' | 'volume' | 'speed' | 'position' | 'rotation3d' | 'zoom'
+      | 'mask.x' | 'mask.y' | 'mask.scaleX' | 'mask.scaleY'
+      | 'mask.rotation' | 'mask.feather' | 'mask.cornerRadius',
   // Atualizei a tipagem para aceitar as novas chaves
   newValue: number | { x?: number; y?: number; rot?: number; rot3d?: number }
 ) => {
@@ -5416,11 +5444,18 @@ const updateKeyframes = (
   const getDefaultValue = () => {
     switch (type) {
       case 'position': return { x: 0, y: 0 };
-      case 'rotation3d': return { rot: 0, rot3d: 0 }; // Alterado de x/y para rot/rot3d
+      case 'rotation3d': return { rot: 0, rot3d: 0 };
       case 'zoom': return 1.0;
       case 'speed': return 1.0;
       case 'opacity': return 1.0;
-      case 'volume': return 0; // volume em dB costuma iniciar em 0
+      case 'volume': return 0;
+      case 'mask.x':            return clip.mask?.x            ?? 0;
+      case 'mask.y':            return clip.mask?.y            ?? 0;
+      case 'mask.scaleX':       return clip.mask?.scaleX       ?? 1;
+      case 'mask.scaleY':       return clip.mask?.scaleY       ?? 1;
+      case 'mask.rotation':     return clip.mask?.rotation     ?? 0;
+      case 'mask.feather':      return clip.mask?.feather      ?? 0;
+      case 'mask.cornerRadius': return clip.mask?.cornerRadius ?? 0;
       default: return 0;
     }
   };
@@ -5520,37 +5555,57 @@ const addKeyframe = (e: React.MouseEvent, clipId: string) => {
   const clip = clips.find(c => c.id === clipId);
   if (!clip || !clip.activeKeyframeView) return;
 
+  const view = clip.activeKeyframeView;
+
+  // mask.x and mask.y are position-like — no value from Y, just mark time
+  const isMaskPosition = view === 'mask.x' || view === 'mask.y';
+  // other mask props, position, rotation3d are view-only (no Y-to-value mapping)
+  const isViewOnly = view === 'position' || view === 'rotation3d' || isMaskPosition;
+
   const rect = e.currentTarget.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
 
   const time = clickX / pixelsPerSecond;
-  // Valor visual (0 a 1) vindo do clique
   const rawValue = Math.max(0, Math.min(1, 1 - (clickY / rect.height)));
 
   setClips(prev => {
     return prev.map(c => {
       if (c.id !== clipId) return c;
-      
-      const view = c.activeKeyframeView as keyof NonNullable<Clip['keyframes']>;
-      
-      // Calculamos o valor final baseado no tipo de visão
-      let finalValue = view === 'speed' ? converterSpeed(rawValue) : 
-      view === 'volume' ? convertDB(rawValue) : 
-      view === 'zoom' ? convertZoom(rawValue) : rawValue;
 
+      const kfView = c.activeKeyframeView as string;
+      const currentKfs = (c.keyframes as any)?.[kfView] || [];
 
-      const currentKfs = c.keyframes?.[view] || [];
+      if (currentKfs.some((k: Keyframe) => Math.abs(k.time - time) < 0.05)) return c;
 
-      // Verifica proximidade para evitar duplicatas
-      if (currentKfs.some(k => Math.abs(k.time - time) < 0.05)) return c;
+      // Compute the keyframe value
+      let finalValue: any;
+      if (isViewOnly) {
+        // Use the currently interpolated value at this time (no change, just record)
+        finalValue = getInterpolatedValueWithFades(c.start + time, c, kfView as any);
+      } else if (kfView === 'speed') {
+        finalValue = converterSpeed(rawValue);
+      } else if (kfView === 'volume') {
+        finalValue = convertDB(rawValue);
+      } else if (kfView === 'zoom') {
+        finalValue = convertZoom(rawValue);
+      } else if (kfView === 'mask.feather' || kfView === 'mask.cornerRadius') {
+        // 0-100 range
+        finalValue = rawValue * 100;
+      } else if (kfView === 'mask.scaleX' || kfView === 'mask.scaleY') {
+        // 0.05-3 range
+        finalValue = 0.05 + rawValue * (3 - 0.05);
+      } else if (kfView === 'mask.rotation') {
+        // 0-360 range
+        finalValue = rawValue * 360;
+      } else {
+        finalValue = rawValue;
+      }
 
       const newKeyframe: Keyframe = {
         id: crypto.randomUUID(),
         time: time,
         value: finalValue,
-        // originalTime: the position in the original footage (media time).
-        // If speed KFs exist we convert composition→media; otherwise time IS media time.
         originalTime: (c.keyframes?.speed && c.keyframes.speed.length > 0)
           ? compositionToMediaTime(time, c.keyframes.speed.map(k => ({ time: k.time, value: Number(k.value) })))
           : time
@@ -5560,14 +5615,11 @@ const addKeyframe = (e: React.MouseEvent, clipId: string) => {
         ...c,
         keyframes: {
           ...c.keyframes,
-          [view]: [...currentKfs, newKeyframe].sort((a, b) => a.time - b.time)
+          [kfView]: [...currentKfs, newKeyframe].sort((a: Keyframe, b: Keyframe) => a.time - b.time)
         }
       };
 
-      // Disparar a lógica de Speed Ramp se necessário
-      // Fazemos isso aqui dentro para garantir que estamos usando o objeto atualizado
-      if (view === 'speed') {
-        // Usamos setTimeout para tirar a execução da thread de renderização do setClips
+      if (kfView === 'speed') {
         setTimeout(() => handleSpeedKeyframeChange(updatedClip), 0);
       }
 
@@ -5584,20 +5636,22 @@ const calculateY = (value: number, height: number, type:string = '') => {
     return (1 - reverterSpeed(value)) * height
 
   if(type == 'volume')
-  {
-    //console.log('volume on', (1- reverterVolume(value)) * height, value)
     return (1- reverterVolume(value)) * height
-  }
 
   if(type == 'zoom')
     return (1- reverterZoom(value)) * height
 
-
-  if((type == 'position') || (type == 'rotation3d'))
+  if(type == 'position' || type == 'rotation3d' || type == 'mask.x' || type == 'mask.y')
     return 0.5
 
-  
-  
+  if(type == 'mask.feather' || type == 'mask.cornerRadius')
+    return (1 - value / 100) * height
+
+  if(type == 'mask.scaleX' || type == 'mask.scaleY')
+    return (1 - (value - 0.05) / (3 - 0.05)) * height
+
+  if(type == 'mask.rotation')
+    return (1 - value / 360) * height
   
   return (1 - value) * height;
 };
@@ -6742,7 +6796,7 @@ return (
      
 
      {/* Header da Timeline / Ruler */}
-  <div className="flex bg-zinc-900/50">
+  <div className="flex bg-zinc-900/50" style = {{width: 300 * pixelsPerSecond }}>
     <div className="w-50 shrink-0 border-r border-white/5" /> 
     
     <div 
@@ -6792,8 +6846,8 @@ return (
     {/* PLAYHEAD - Now released inside the scroll container. */}
     <div ref={playheadRef}
       className="absolute top-0 bottom-0 w-[2px] bg-sky-600 z-[100] pointer-events-none transition-transform duration-75 ease-out" 
-      style={{ left: asidetrackwidth + 15 }} // +8 por causa do padding p-2 do container
-
+      style={{ left: asidetrackwidth + 15, height: (tracks.length * 75)  }} // +8 por causa do padding p-2 do container
+      
     >
         {/* Needle head (Triangle or Circle) */}
         <div onMouseDown={handlePlayheadMouseDown}  className="w-4 h-4 bg-sky-600 rounded-b-full shadow-[0_0_10px_rgba(220,38,38,0.5)] -ml-[7px]" />
@@ -7111,7 +7165,7 @@ return (
                 
 
                       <div 
-                        className="fixed z-50 min-w-[200px] bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-lg py-1.5 animate-in fade-in zoom-in duration-100 "
+                        className="fixed z-200 min-w-[200px] bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-lg py-1.5 animate-in fade-in zoom-in duration-100 "
                         style={{ top: adjustedY, left: adjustedX }}
                       >
                         {/* Opção: Separate/Recover Audio (Apenas Vídeo) */}
@@ -7157,36 +7211,41 @@ return (
                             </button>
 
                             {/* Vocal Remover with submenu */}
-                            <div className="relative group">
-                              <div className="w-full text-left px-3 py-2 text-sm text-zinc-200 group-hover:bg-zinc-800 transition-colors flex items-center justify-between cursor-default">
+                            <div className="relative"
+                              onMouseEnter={() => setActiveSubmenu('vocalRemover')}
+                              onMouseLeave={() => setActiveSubmenu(null)}
+                            >
+                              <div className={`w-full text-left px-3 py-2 text-sm text-zinc-200 transition-colors flex items-center justify-between cursor-default ${activeSubmenu === 'vocalRemover' ? 'bg-zinc-800' : ''}`}>
                                 <div className="flex items-center gap-3">
                                   <MicOffIcon size={14} className="opacity-70" />
                                   <span>Vocal Remover</span>
                                 </div>
                                 <SkipForward size={12} className="opacity-40" />
                               </div>
-                              <div className="absolute left-[calc(100%-4px)] top-[-6px] invisible group-hover:visible opacity-0 group-hover:opacity-100
-                                min-w-[170px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5
-                                transition-all duration-150 transform translate-x-1 group-hover:translate-x-2">
-                                {([
-                                  { label: 'Vocals Only',       mode: 'vocals_only'      as const, icon: <MicOffIcon size={14} /> },
-                                  { label: 'Instrumental Only', mode: 'instrumental_only' as const, icon: <Music size={14} /> },
-                                  { label: 'Both',              mode: 'both'              as const, icon: <Wind size={14} /> },
-                                ] as const).map(opt => (
-                                  <button
-                                    key={opt.mode}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      vocalRemover(contextMenu.clip, opt.mode);
-                                      setContextMenu(null);
-                                    }}
-                                    className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
-                                  >
-                                    <span className="opacity-50">{opt.icon}</span>
-                                    <span>{opt.label}</span>
-                                  </button>
-                                ))}
-                              </div>
+                              {activeSubmenu === 'vocalRemover' && (
+                                <div className="absolute left-[calc(100%-4px)] top-[-6px]
+                                  min-w-[170px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5
+                                  transition-all duration-150 transform translate-x-2">
+                                  {([
+                                    { label: 'Vocals Only',       mode: 'vocals_only'      as const, icon: <MicOffIcon size={14} /> },
+                                    { label: 'Instrumental Only', mode: 'instrumental_only' as const, icon: <Music size={14} /> },
+                                    { label: 'Both',              mode: 'both'              as const, icon: <Wind size={14} /> },
+                                  ] as const).map(opt => (
+                                    <button
+                                      key={opt.mode}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        vocalRemover(contextMenu.clip, opt.mode);
+                                        setContextMenu(null);
+                                      }}
+                                      className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                                    >
+                                      <span className="opacity-50">{opt.icon}</span>
+                                      <span>{opt.label}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             <div className="h-[1px] bg-white/5 my-1 mx-2" />
@@ -7209,10 +7268,13 @@ return (
 
 
                         {/* Opção KEYFRAMABLE com Submenu Lateral */}
-                        <div className="relative group">
+                        <div className="relative"
+                          onMouseEnter={() => setActiveSubmenu('keyframable')}
+                          onMouseLeave={() => setActiveSubmenu(null)}
+                        >
                           <div 
-                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 
-                                      group-hover:bg-zinc-800 transition-colors flex items-center justify-between cursor-default"
+                            className={`w-full text-left px-3 py-2 text-sm text-zinc-200 
+                                      transition-colors flex items-center justify-between cursor-default ${activeSubmenu === 'keyframable' ? 'bg-zinc-800' : ''}`}
                           >
                             <div className="flex items-center gap-3">
                               <Diamond size={14} className="text-violet-400 opacity-80" />
@@ -7222,43 +7284,105 @@ return (
                           </div>
 
                           {/* Submenu Lateral */}
-                          <div className="absolute left-[calc(100%-4px)] top-[-6px] invisible group-hover:visible opacity-0 group-hover:opacity-100
-                          min-w-[160px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5 
-                          transition-all duration-150 transform translate-x-1 group-hover:translate-x-2
-                          max-h-[100px] overflow-y-auto scrollbar-thin scrollbar-thumb-cyan-700
-                          ">
-                            
-                            {[
-                              { label: 'Volume', value: 'volume', icon: <Volume2 size={14} /> },
-                              { label: 'Opacity', value: 'opacity', icon: <Layers size={14} /> },
-                              { label: 'Speed', value: 'speed', icon: <Clock size={14} /> },
-                              { label: '3D Rotation', value: 'rotation3d', icon: <Rotate3d size={14} /> },
-                              { label: 'Position', value: 'position', icon: <Crosshair size={14} /> },
-                              { label: 'Zoom', value: 'zoom', icon: <ZoomIn size={14} /> },
+                          {activeSubmenu === 'keyframable' && (
+                            <div className="absolute left-[calc(100%-4px)] top-[-6px]
+                            min-w-[160px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5 
+                            transform translate-x-2
+                            max-h-[100px] overflow-y-auto scrollbar-thin scrollbar-thumb-cyan-700
+                            ">
+                              
+                              {[
+                                { label: 'Volume', value: 'volume', icon: <Volume2 size={14} /> },
+                                { label: 'Opacity', value: 'opacity', icon: <Layers size={14} /> },
+                                { label: 'Speed', value: 'speed', icon: <Clock size={14} /> },
+                                { label: '3D Rotation', value: 'rotation3d', icon: <Rotate3d size={14} /> },
+                                { label: 'Position', value: 'position', icon: <Crosshair size={14} /> },
+                                { label: 'Zoom', value: 'zoom', icon: <ZoomIn size={14} /> },
 
-                            ].map((sub) => (
-                              <button
-                                key={sub.value}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  
-                                  // View Keyframes
-                                  setClips(prev => prev.map(c => 
-                                    c.id === contextMenu.clip.id 
-                                      ? { ...c, activeKeyframeView: sub.value as any } 
-                                      : c
-                                  ));
-                                  
-                                  setContextMenu(null);
-                                }}
-                                className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
-                                >
-                                  <span className="opacity-50">{sub.icon}</span>
-                                  <span>{sub.label}</span>
-                                </button>
-                            ))}
-                          </div>
+                              ].map((sub) => (
+                                <button
+                                  key={sub.value}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    
+                                    // View Keyframes
+                                    setClips(prev => prev.map(c => 
+                                      c.id === contextMenu.clip.id 
+                                        ? { ...c, activeKeyframeView: sub.value as any } 
+                                        : c
+                                    ));
+                                    
+                                    setContextMenu(null);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                                  >
+                                    <span className="opacity-50">{sub.icon}</span>
+                                    <span>{sub.label}</span>
+                                  </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
+
+                        {/* Opção MASK com Submenu Lateral */}
+                        {(contextMenu.type === 'video' || contextMenu.type === 'image' || contextMenu.type === 'text') &&
+                          contextMenu.clip.mask?.type && contextMenu.clip.mask.type !== 'none' && (
+                          <div className="relative"
+                            onMouseEnter={() => setActiveSubmenu('mask')}
+                            onMouseLeave={() => setActiveSubmenu(null)}
+                          >
+                            <div
+                              className={`w-full text-left px-3 py-2 text-sm text-zinc-200
+                                        transition-colors flex items-center justify-between cursor-default ${activeSubmenu === 'mask' ? 'bg-zinc-800' : ''}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <Scissors size={14} className="text-sky-400 opacity-80" />
+                                <span className="font-medium">Mask</span>
+                              </div>
+                              <SkipForward size={12} className="opacity-40" />
+                            </div>
+
+                            {/* Submenu Lateral */}
+                            {activeSubmenu === 'mask' && (
+                              <div className="absolute left-[calc(100%-4px)] top-[-6px]
+                              min-w-[170px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5
+                              transform translate-x-2
+                              max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-sky-700">
+                                {([
+                                  { label: 'Position X',     value: 'mask.x',            icon: <Crosshair size={14} />,  note: 'view only' },
+                                  { label: 'Position Y',     value: 'mask.y',            icon: <Crosshair size={14} />,  note: 'view only' },
+                                  { label: 'Scale X',        value: 'mask.scaleX',       icon: <ZoomIn size={14} /> },
+                                  { label: 'Scale Y',        value: 'mask.scaleY',       icon: <ZoomIn size={14} /> },
+                                  { label: 'Rotation',       value: 'mask.rotation',     icon: <Rotate3d size={14} /> },
+                                  { label: 'Feather',        value: 'mask.feather',      icon: <Wind size={14} /> },
+                                  ...(contextMenu.clip.mask?.type === 'rectangle'
+                                    ? [{ label: 'Corner Radius', value: 'mask.cornerRadius', icon: <Layers size={14} /> }]
+                                    : []),
+                                ] as { label: string; value: string; icon: React.ReactNode; note?: string }[]).map((sub) => (
+                                  <button
+                                    key={sub.value}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setClips(prev => prev.map(c =>
+                                        c.id === contextMenu.clip.id
+                                          ? { ...c, activeKeyframeView: sub.value as any }
+                                          : c
+                                      ));
+                                      setContextMenu(null);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-sky-600 hover:text-white transition-colors flex items-center gap-3"
+                                  >
+                                    <span className="opacity-50">{sub.icon}</span>
+                                    <span>{sub.label}</span>
+                                    {sub.note && (
+                                      <span className="ml-auto text-[9px] text-zinc-500 italic">{sub.note}</span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {/* Outras opções padrão (Exemplo: Delete) */}
                         <div className="h-[1px] bg-white/5 my-1 mx-2" />
@@ -7330,25 +7454,35 @@ return (
                 {
 
                   var cyString = ""
+                  const av = clip.activeKeyframeView;
 
-                  clip.activeKeyframeView === 'volume' ? 
-                     cyString = `${(1 - reverterVolume(kf.value)) * 100}%`  : 
-                  clip.activeKeyframeView === 'speed' ? 
-                        cyString = `${(1 - reverterSpeed(kf.value)) * 100}%` : 
-                  clip.activeKeyframeView === 'zoom' ? 
-                        cyString = `${(1 - reverterZoom(kf.value)) * 100}%` :
-                  clip.activeKeyframeView === 'position' ? 
-                        cyString = '50%':
-                  clip.activeKeyframeView === 'rotation3d' ? 
-                        cyString = '50%': 
-                        cyString = `${(1 - kf.value) * 100}%`
-                  
-                  
-                  var title =  clip.activeKeyframeView === 'position' ? `X: ${kf.value.x},Y: ${kf.value.y}` :
-                  clip.activeKeyframeView === 'rotation3d' ? `Rot: ${kf.value.rot},Rot3D: ${kf.value.rot3d}`:
-                  clip.activeKeyframeView === 'zoom' ? 
-                  `${(1 - reverterZoom(kf.value)) * 100}%` :
-                  `${kf.value}`
+                  if (av === 'volume')
+                    cyString = `${(1 - reverterVolume(kf.value)) * 100}%`;
+                  else if (av === 'speed')
+                    cyString = `${(1 - reverterSpeed(kf.value)) * 100}%`;
+                  else if (av === 'zoom')
+                    cyString = `${(1 - reverterZoom(kf.value)) * 100}%`;
+                  else if (av === 'position' || av === 'rotation3d' || av === 'mask.x' || av === 'mask.y')
+                    cyString = '50%';
+                  else if (av === 'mask.feather' || av === 'mask.cornerRadius')
+                    cyString = `${(1 - (kf.value as number) / 100) * 100}%`;
+                  else if (av === 'mask.scaleX' || av === 'mask.scaleY')
+                    cyString = `${(1 - ((kf.value as number) - 0.05) / (3 - 0.05)) * 100}%`;
+                  else if (av === 'mask.rotation')
+                    cyString = `${(1 - (kf.value as number) / 360) * 100}%`;
+                  else
+                    cyString = `${(1 - (kf.value as number)) * 100}%`;
+
+                  var title =
+                    av === 'position'    ? `X: ${(kf.value as any).x}, Y: ${(kf.value as any).y}` :
+                    av === 'rotation3d'  ? `Rot: ${(kf.value as any).rot}, Rot3D: ${(kf.value as any).rot3d}` :
+                    av === 'mask.x'      ? `X: ${kf.value}` :
+                    av === 'mask.y'      ? `Y: ${kf.value}` :
+                    av === 'zoom'        ? `${(1 - reverterZoom(kf.value as number)) * 100}%` :
+                    `${kf.value}`;
+
+                  // These types have object values — dragging Y doesn't make sense, view-only
+                  const isViewOnlyKf = av === 'position' || av === 'rotation3d' || av === 'mask.x' || av === 'mask.y';
                   
                   return(
                   <circle
@@ -7364,9 +7498,8 @@ return (
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if((clip.activeKeyframeView !== 'position') && (clip.activeKeyframeView !== 'rotation3d'))
-                          handleKeyframeDrag(e, clip.id, kf.id, clip.activeKeyframeView!);
-                      
+                      if (!isViewOnlyKf)
+                        handleKeyframeDrag(e, clip.id, kf.id, clip.activeKeyframeView! as any);
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault();

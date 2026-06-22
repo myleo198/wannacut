@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Diamond, DiamondPlus, Video, Volume2, Type, Settings2, 
   Wind, Layers, ChevronDown, Sparkles, X,
-  AlignLeft, AlignCenter, AlignRight
+  AlignLeft, AlignCenter, AlignRight, Scissors
 } from 'lucide-react';
 import { motion, AnimatePresence, number } from 'framer-motion';
 import {converterSpeed, reverterSpeed, convertDB, convertZoom} from '@/App'
@@ -82,6 +82,190 @@ interface PropertiesAsideProps {
 
 
 
+
+
+// ---------------------------------------------------------------------------
+// MASK SECTION
+// ---------------------------------------------------------------------------
+
+const MASK_TYPES = [
+  { value: 'none',      label: 'None'      },
+  { value: 'linear',    label: 'Linear'    },
+  { value: 'radial',    label: 'Radial'    },
+  { value: 'rectangle', label: 'Rectangle' },
+  { value: 'heart',     label: 'Heart'     },
+  { value: 'star',      label: 'Star'      },
+] as const;
+
+type MaskType = typeof MASK_TYPES[number]['value'];
+
+const DEFAULT_MASK = {
+  type:         'none' as MaskType,
+  x:            0,
+  y:            0,
+  scaleX:       1,
+  scaleY:       1,
+  rotation:     0,
+  feather:      0,
+  cornerRadius: 0,
+  invert:       false,
+};
+
+const MaskSlider = ({
+  label, value, min, max, step = 1, unit = '',
+  onChange,
+}: {
+  label: string; value: number; min: number; max: number; step?: number;
+  unit?: string; onChange: (v: number) => void;
+}) => (
+  <div className="mb-3">
+    <div className="flex justify-between items-center mb-1">
+      <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">{label}</span>
+      <span className="text-[9px] font-mono text-zinc-300">
+        {typeof value === 'number' ? value.toFixed(step < 1 ? 2 : 0) : 0}{unit}
+      </span>
+    </div>
+    <input
+      type="range" min={min} max={max} step={step}
+      value={value ?? 0}
+      onChange={(e) => onChange(parseFloat(e.target.value))}
+      className="w-full cursor-pointer accent-sky-500"
+    />
+  </div>
+);
+
+const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; activeHex: string }) => {
+  const mask = clip.mask || DEFAULT_MASK;
+  const maskType: MaskType = mask.type || 'none';
+
+  const update = (patch: Partial<typeof DEFAULT_MASK>) =>
+    setClips((prev: any[]) =>
+      prev.map(c => c.id === clip.id ? { ...c, mask: { ...DEFAULT_MASK, ...mask, ...patch } } : c)
+    );
+
+  const hasPosition   = maskType !== 'none' && maskType !== 'linear';
+  const hasScaleXY    = maskType === 'radial';
+  const hasScale      = maskType !== 'none' && maskType !== 'linear' && !hasScaleXY;
+  const hasCorner     = maskType === 'rectangle';
+  const hasFeather    = maskType !== 'none';
+  const hasInvert     = maskType !== 'none' && maskType !== 'linear';
+  const hasAngle      = maskType === 'linear';
+  const hasRotation   = maskType !== 'none' && maskType !== 'linear';
+
+  return (
+    <section className="mb-6 p-3 bg-white/5 rounded-lg border border-white/5">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-4" style={{ color: '#38bdf8' }}>
+        <Scissors size={12} />
+        <span className="text-[9px] font-bold uppercase tracking-widest">Mask</span>
+      </div>
+
+      {/* Type selector grid */}
+      <div className="grid grid-cols-3 gap-1 mb-4">
+        {MASK_TYPES.map(({ value, label }) => {
+          const active = maskType === value;
+          return (
+            <button
+              key={value}
+              onClick={() => update({ type: value })}
+              className="py-1.5 rounded text-[9px] font-bold uppercase tracking-tight transition-all border"
+              style={{
+                borderColor: active ? '#38bdf8' : 'rgba(255,255,255,0.07)',
+                background:  active ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.03)',
+                color:       active ? '#38bdf8' : '#71717a',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {maskType !== 'none' && (
+        <div>
+          {/* Linear angle */}
+          {hasAngle && (
+            <MaskSlider label="Angle" value={mask.rotation ?? 0} min={0} max={360} unit="°"
+              onChange={(v) => update({ rotation: v })} />
+          )}
+
+          {/* Position X / Y */}
+          {hasPosition && (
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {(['x', 'y'] as const).map((axis) => (
+                <div key={axis}>
+                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter block mb-1">
+                    Position {axis.toUpperCase()}
+                  </span>
+                  <input
+                    type="number"
+                    className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20"
+                    value={mask[axis] ?? 0}
+                    onChange={(e) => update({ [axis]: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Scale X / Y (radial ellipse) */}
+          {hasScaleXY && (
+            <>
+              <MaskSlider label="Scale X" value={mask.scaleX ?? 1} min={0.05} max={3} step={0.01}
+                onChange={(v) => update({ scaleX: v })} />
+              <MaskSlider label="Scale Y" value={mask.scaleY ?? 1} min={0.05} max={3} step={0.01}
+                onChange={(v) => update({ scaleY: v })} />
+            </>
+          )}
+
+          {/* Uniform scale */}
+          {hasScale && (
+            <MaskSlider label="Scale" value={mask.scaleX ?? 1} min={0.05} max={3} step={0.01}
+              onChange={(v) => update({ scaleX: v, scaleY: v })} />
+          )}
+
+          {/* Rotation */}
+          {hasRotation && (
+            <MaskSlider label="Rotation" value={mask.rotation ?? 0} min={0} max={360} unit="°"
+              onChange={(v) => update({ rotation: v })} />
+          )}
+
+          {/* Corner Radius (rectangle only) */}
+          {hasCorner && (
+            <MaskSlider label="Corner Radius" value={mask.cornerRadius ?? 0} min={0} max={100} unit="%"
+              onChange={(v) => update({ cornerRadius: v })} />
+          )}
+
+          {/* Feather */}
+          {hasFeather && (
+            <MaskSlider label="Feather" value={mask.feather ?? 0} min={0} max={100}
+              onChange={(v) => update({ feather: v })} />
+          )}
+
+          {/* Invert toggle */}
+          {hasInvert && (
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
+              <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">Invert Mask</span>
+              <label className="relative flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={!!mask.invert}
+                  onChange={(e) => update({ invert: e.target.checked })}
+                />
+                <div
+                  className="w-8 h-4 rounded-full transition-colors duration-200 border border-white/10"
+                  style={{ background: mask.invert ? '#38bdf8' : '#3f3f46' }}
+                />
+                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${mask.invert ? 'translate-x-4 left-0.5' : 'left-0.5'}`} />
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
 
 // Seção de Ajustes Básicos (Transform, Opacity, etc.)
 const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posXState, posYState, zoomState, isZoomKNow, updateKeyframes, selectedClip, availableFonts, 
@@ -245,34 +429,6 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
               </PropertyRow>
 
 
-
-              {/* TEXT ALIGNMENT */}
-              <PropertyRow label="Text Align" keyframable={false}>
-                <div className="flex gap-1">
-                  {([
-                    { value: 'left',   icon: AlignLeft   },
-                    { value: 'center', icon: AlignCenter },
-                    { value: 'right',  icon: AlignRight  },
-                  ] as const).map(({ value, icon: Icon }) => {
-                    const active = (selectedClip.text_align || 'center') === value;
-                    return (
-                      <button
-                        key={value}
-                        onClick={() => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, text_align: value } : c))}
-                        className="flex-1 flex items-center justify-center py-1 rounded border transition-all"
-                        style={{
-                          borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.08)',
-                          background:  active ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
-                          color:       active ? '#f59e0b' : '#71717a',
-                        }}
-                        title={value.charAt(0).toUpperCase() + value.slice(1)}
-                      >
-                        <Icon size={12} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </PropertyRow>
 
               <PropertyRow 
                 label={
@@ -648,6 +804,11 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
 
 
         </section>
+
+        {/* SECTION: MASK */}
+        {(isVideo || isImage || isText) && (
+          <MaskSection clip={selectedClip} setClips={setClips} activeHex={activeHex} />
+        )}
 
         {/* SECTION: FADES */}
         {
