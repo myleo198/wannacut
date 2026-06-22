@@ -26,7 +26,7 @@
 </div>
 
 
-### **Status:** 🛠️ _Premiere Version is_ **Available ❗❗❗** _(Beta)_
+### **Status:** 🛠️ _Version 0.3.0_ **Under Development ❗❗❗** _(Beta)_
 
 ----------
 
