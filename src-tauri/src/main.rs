@@ -917,10 +917,15 @@ async fn download_video(
     project_path: String,
     settings_folder: String,
     url: String,
+    download_mode: String, // "video_best" | "video_1080" | "video_720" | "video_480" | "audio_mp3" | "audio_wav"
     yt_pid: State<'_, YtDlpPid>,
 ) -> Result<String, String> {
+    let is_audio_only = download_mode.starts_with("audio_");
+
+    
+    let subfolder = "videos";
     let mut download_path = PathBuf::from(&project_path);
-    download_path.push("videos");
+    download_path.push(subfolder);
 
     let bin_dir = PathBuf::from(&settings_folder).join("bin");
     let bin_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
@@ -936,21 +941,56 @@ async fn download_video(
         download_initial_binary(&bin_path).await?;
     }
 
+    // Monta os argumentos de formato conforme o modo escolhido
+    let format_args: Vec<&str> = match download_mode.as_str() {
+        "video_1080" => vec![
+            "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            "--merge-output-format", "mp4",
+        ],
+        "video_720" => vec![
+            "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "--merge-output-format", "mp4",
+        ],
+        "video_480" => vec![
+            "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]",
+            "--merge-output-format", "mp4",
+        ],
+        "audio_mp3" => vec![
+            "-f", "bestaudio",
+            "-x", "--audio-format", "mp3",
+            "--audio-quality", "192K",
+        ],
+        "audio_wav" => vec![
+            "-f", "bestaudio",
+            "-x", "--audio-format", "wav",
+        ],
+        // "video_best" ou qualquer valor desconhecido
+        _ => vec![
+            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            "--merge-output-format", "mp4",
+        ],
+    };
+
     let run_download_with_progress = |path_to_bin: &Path, app: &tauri::AppHandle| -> Result<std::process::Output, String> {
         use std::io::BufRead;
 
+        let mut args: Vec<String> = vec![
+            "--no-check-certificate".into(),
+            "--prefer-free-formats".into(),
+            "--add-header".into(),
+            "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".into(),
+        ];
+        for a in &format_args {
+            args.push(a.to_string());
+        }
+        args.push("--newline".into());
+        args.push("--progress".into());
+        args.push("-o".into());
+        args.push(format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()));
+        args.push(url.clone());
+
         let mut child = Command::new(path_to_bin)
-            .args([
-                "--no-check-certificate",
-                "--prefer-free-formats",
-                "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                "--merge-output-format", "mp4",
-                "--newline",
-                "--progress",
-                "-o", &format!("{}/%(title)s.%(ext)s", download_path.to_string_lossy()),
-                &url,
-            ])
+            .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -2036,8 +2076,8 @@ fn main() {
             plans::activate_license,
             plans::get_license_state,
             plans::deactivate_license,
-            vocal_remover::vocal_remover_model_exists,
-            vocal_remover::vocal_remover_download_model,
+            vocal_remover::vocal_remover_ready,
+            vocal_remover::vocal_remover_download,
             vocal_remover::remove_vocals,
         ])
         .run(tauri::generate_context!())

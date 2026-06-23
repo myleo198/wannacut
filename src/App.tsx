@@ -234,8 +234,6 @@ interface Tracks
 // No seu tipo Clip, adicione:
 
 
-const PIXELS_PER_SECOND = 5;
-
 
 
 
@@ -417,6 +415,7 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("My Awesome Project");
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [downloadMode, setDownloadMode] = useState<string>("video_best");
   const [playheadPos, setPlayheadPos] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -1200,6 +1199,11 @@ useEffect(() => {
 
 const [contextMenu, setContextMenu] = useState<{ x: number, y: number, type: any, clip: Clip } | null>(null);
 const [activeSubmenu, setActiveSubmenu] = useState<'vocalRemover' | 'keyframable' | 'mask' | null>(null);
+
+// Vocal Remover download modal
+const [vocalEngineModal, setVocalEngineModal] = useState(false);
+const [vocalEngineStep, setVocalEngineStep] = useState<'confirm' | 'engine' | 'model' | 'done' | null>(null);
+const [vocalPendingClip, setVocalPendingClip] = useState<{ clip: Clip; mode: 'vocals_only' | 'instrumental_only' | 'both' } | null>(null);
 const [trackContextMenu, setTrackContextMenu] = useState<{
   x: number;
   y: number;
@@ -1373,11 +1377,9 @@ const separateAudio = async (clip: Clip) =>
 // VOCAL REMOVER
 // ─────────────────────────────────────────────
 
-const vocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only' | 'both') => {
-  if (!currentProjectPath || !rootPath) {
-    showNotify('No project loaded', 'error');
-    return;
-  }
+// Run after engine+model are confirmed present
+const runVocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only' | 'both') => {
+  if (!currentProjectPath || !rootPath) return;
 
   const baseName = clip.name.split('.').slice(0, -1).join('.');
   const audioSrc = `${currentProjectPath}/extracted_audios/${baseName}.mp3`;
@@ -1430,6 +1432,62 @@ const vocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only
   } catch (err: any) {
     console.error('vocalRemover error:', err);
     showNotify(err?.toString() ?? 'Vocal remover failed', 'error');
+  }
+};
+
+// Entry point — checks if engine/model are downloaded first
+const vocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only' | 'both') => {
+  if (!currentProjectPath || !rootPath) {
+    showNotify('No project loaded', 'error');
+    return;
+  }
+
+  const ready = await invoke<{ engine: boolean; model: boolean }>('vocal_remover_ready', {
+    workspace: rootPath,
+  });
+
+  if (!ready.engine || !ready.model) {
+    // Show download modal and remember what to run after
+    setVocalPendingClip({ clip, mode });
+    setVocalEngineStep('confirm');
+    setVocalEngineModal(true);
+    return;
+  }
+
+  await runVocalRemover(clip, mode);
+};
+
+// Called by the download modal's confirm button
+const startVocalEngineDownload = async () => {
+  
+   if (!rootPath) {
+    console.error('[VocalRemover] rootPath is null!');
+    return;
+  }
+  console.log('[VocalRemover] Starting download, workspace:', rootPath);
+
+  setVocalEngineStep('engine');
+
+
+  const unlisten = await listen<{ step: string; status: string }>('vocal_remover_progress', (e) => {
+    setVocalEngineStep(e.payload.step as 'engine' | 'model');
+  });
+
+  try {
+    await invoke('vocal_remover_download', { workspace: rootPath });
+    setVocalEngineStep('done');
+
+    // Auto-run the pending action
+    if (vocalPendingClip) {
+      setVocalEngineModal(false);
+      setVocalPendingClip(null);
+      await runVocalRemover(vocalPendingClip.clip, vocalPendingClip.mode);
+    }
+  } catch (err: any) {
+    showNotify(err?.toString() ?? 'Download failed', 'error');
+    setVocalEngineModal(false);
+  } finally {
+    unlisten();
   }
 };
 
@@ -3065,7 +3123,7 @@ const handleUndo = () => {
 
 const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
   const { minStart, maxEndTimestamp } = getClipBoundaries(id);
-  const deltaSeconds = (deltaX / PIXELS_PER_SECOND) * 0.5; // Remove 0.2 if you want raw mouse precision
+  const deltaSeconds = (deltaX / pixelsPerSecond) //* 0.5; // Remove 0.2 if you want raw mouse precision
 
   setClips(prev => prev.map(clip => {
     if (clip.id !== id) return clip;
@@ -4804,7 +4862,7 @@ const openProject = async (path: string) => {
     setDownloadYTprogress(0);
     showNotify("Downloading...", "success");
     try {
-      await invoke('download_video', { projectPath: currentProjectPath, settingsFolder: settingsFolder ,url: youtubeUrl });
+      await invoke('download_video', { projectPath: currentProjectPath, settingsFolder: settingsFolder, url: youtubeUrl, downloadMode });
       showNotify("Download Complete!", "success");
       setIsImportModalOpen(false);
       setYoutubeUrl("");
@@ -6846,7 +6904,7 @@ return (
     {/* PLAYHEAD - Now released inside the scroll container. */}
     <div ref={playheadRef}
       className="absolute top-0 bottom-0 w-[2px] bg-sky-600 z-[100] pointer-events-none transition-transform duration-75 ease-out" 
-      style={{ left: asidetrackwidth + 15, height: (tracks.length * 75)  }} // +8 por causa do padding p-2 do container
+      style={{ left: asidetrackwidth + 15, height: (tracks.length * 75) +50  }} // +8 por causa do padding p-2 do container
       
     >
         {/* Needle head (Triangle or Circle) */}
@@ -7814,9 +7872,58 @@ return (
           <motion.div initial={{ y: 20 }} animate={{ y: 0 }} className="bg-[#18181b] border border-zinc-800 p-8 rounded-3xl w-full max-w-md">
             <h2 className="text-xl font-black flex items-center gap-3 text-white mb-6"><Youtube className="text-red-600" /> YT DOWNLOAD</h2>
             <input type="text" placeholder="Video URL..." value={youtubeUrl} onChange={(e) => setYoutubeUrl(e.target.value)}
-              className="w-full bg-black border border-zinc-700 rounded-xl px-4 py-4 text-sm font-bold text-white outline-none focus:border-red-600 mb-6" />
-            
-            {/* Barra de progresso real do yt-dlp */}
+              className="w-full bg-black border border-zinc-700 rounded-xl px-4 py-4 text-sm font-bold text-white outline-none focus:border-red-600 mb-5" />
+
+            {/* Mode selector */}
+            <div className="mb-5">
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3">Format & Quality</p>
+
+              {/* Video options */}
+              <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Video</p>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {([
+                  { id: 'video_best', label: 'Best',  sub: 'auto' },
+                  { id: 'video_1080', label: '1080p', sub: 'HD' },
+                  { id: 'video_720',  label: '720p',  sub: 'HD' },
+                  { id: 'video_480',  label: '480p',  sub: 'SD' },
+                ] as const).map(({ id, label, sub }) => (
+                  <button
+                    key={id}
+                    onClick={() => setDownloadMode(id)}
+                    className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-xl border text-center transition-all
+                      ${downloadMode === id
+                        ? 'bg-red-700/20 border-red-600/60 text-red-400'
+                        : 'bg-white/[0.02] border-white/5 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'}`}
+                  >
+                    <span className="text-xs font-black">{label}</span>
+                    <span className="text-[9px] font-medium opacity-60">{sub}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Audio options */}
+              <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Audio only</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { id: 'audio_mp3', label: 'MP3', sub: '192 kbps' },
+                  { id: 'audio_wav', label: 'WAV', sub: 'lossless' },
+                ] as const).map(({ id, label, sub }) => (
+                  <button
+                    key={id}
+                    onClick={() => setDownloadMode(id)}
+                    className={`flex flex-col items-center justify-center py-2.5 rounded-xl border text-center transition-all
+                      ${downloadMode === id
+                        ? 'bg-rose-600/20 border-rose-500/60 text-rose-400'
+                        : 'bg-white/[0.02] border-white/5 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'}`}
+                  >
+                    <span className="text-xs font-black">{label}</span>
+                    <span className="text-[9px] font-medium opacity-60">{sub}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Download button with progress */}
             <div className="relative mb-4">
               <button disabled={isDownloading} onClick={handleYoutubeDownload}
                 className={`relative w-full py-4 rounded-xl font-black text-xs text-white overflow-hidden ${isDownloading ? 'bg-zinc-800' : 'bg-rose-700 hover:bg-rose-800'}`}>
@@ -7824,7 +7931,7 @@ return (
 
                 {DownloadYTprogress > 0 && (
                   <div className="absolute bottom-0 left-0 w-full h-[2px] bg-zinc-900">
-                    <motion.div 
+                    <motion.div
                       animate={{ width: `${DownloadYTprogress}%` }}
                       className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
                     />
@@ -7832,23 +7939,21 @@ return (
                 )}
               </button>
 
-              
-
               {isDownloading && (
-                  <button
-                    onClick={async () => {
-                      await invoke('cancel_video_download');
-                      setIsDownloading(false);
-                      setDownloadYTprogress(0);
-                      showNotify('Download cancelled.', 'error');
-                    }}
-                    className="w-full mt-2 py-3 rounded-xl font-black text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-700 uppercase tracking-widest transition-all"
-                  >
-                    Cancel
-                  </button>
-                )}
+                <button
+                  onClick={async () => {
+                    await invoke('cancel_video_download');
+                    setIsDownloading(false);
+                    setDownloadYTprogress(0);
+                    showNotify('Download cancelled.', 'error');
+                  }}
+                  className="w-full mt-2 py-3 rounded-xl font-black text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-700 uppercase tracking-widest transition-all"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
-            
+
             <button onClick={() => setIsImportModalOpen(false)} className="w-full mt-4 text-[10px] text-zinc-500 font-bold uppercase"> Close </button>
           </motion.div>
         </div>
@@ -7921,6 +8026,111 @@ return (
     settingsFolder={settingsFolder}
     onShortcutsChange={(updated) => setShortcuts(updated)}
   />
+
+  {/* ── Vocal Remover — Engine Download Modal ─────────────────── */}
+  <AnimatePresence>
+    {vocalEngineModal && (
+      <>
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-md"
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000]
+            w-full max-w-sm bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl"
+        >
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">AI Engine</h3>
+              <h2 className="text-sm font-bold text-zinc-200 mt-0.5">Vocal Remover Setup</h2>
+            </div>
+            {(vocalEngineStep === 'confirm' || vocalEngineStep === 'done') && (
+              <button
+                onClick={() => { setVocalEngineModal(false); setVocalPendingClip(null); }}
+                className="p-1.5 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 rounded-full transition-colors"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Not downloading yet — explain what will be downloaded */}
+          {vocalEngineStep === 'confirm' && (
+            <>
+              <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 mb-5 space-y-2">
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  The <span className="text-white font-semibold">Vocal Remover</span> requires a one-time download of the AI engine and model.
+                </p>
+                <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1">
+                  <span>🧠 AI Engine (inference binary)</span>
+                  <span className="text-zinc-400">~99 MB</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                  <span>🎵 HTDemucs model weights</span>
+                  <span className="text-zinc-400">~161 MB</span>
+                </div>
+                <p className="text-[10px] text-zinc-600 pt-1">
+                  Downloaded once · Stored in your workspace · Works offline after
+                </p>
+              </div>
+              <button
+                onClick={startVocalEngineDownload}
+                className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 transition text-white text-xs font-black uppercase tracking-widest"
+              >
+                Download & Continue
+              </button>
+            </>
+          )}
+
+          {/* Downloading */}
+          {(vocalEngineStep === 'engine' || vocalEngineStep === 'model') && (
+            <div className="space-y-4">
+              <div className="space-y-3">
+                {/* Engine row */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400">AI Engine</span>
+                  {vocalEngineStep === 'engine'
+                    ? <span className="text-violet-400 animate-pulse">Downloading...</span>
+                    : <span className="text-green-400">✓ Done</span>
+                  }
+                </div>
+                {/* Model row */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400">HTDemucs Model</span>
+                  {vocalEngineStep === 'model'
+                    ? <span className="text-violet-400 animate-pulse">Downloading...</span>
+                    : vocalEngineStep === 'done'
+                    ? <span className="text-green-400">✓ Done</span>
+                    : <span className="text-zinc-600">Waiting...</span>
+                  }
+                </div>
+              </div>
+              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-violet-500 rounded-full"
+                  animate={{ width: vocalEngineStep === 'engine' ? '45%' : '90%' }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-600 text-center">Do not close the app during download</p>
+            </div>
+          )}
+
+          {/* Done */}
+          {vocalEngineStep === 'done' && (
+            <div className="text-center space-y-3">
+              <p className="text-green-400 text-sm font-bold">✓ Engine ready!</p>
+              <p className="text-[11px] text-zinc-500">Processing your audio now...</p>
+            </div>
+          )}
+        </motion.div>
+      </>
+    )}
+  </AnimatePresence>
+
   </div>
 );
 }

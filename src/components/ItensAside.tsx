@@ -174,6 +174,16 @@ export const ItensAside = ({
   settingsFolder,
 }: ItensAsideProps) => {
   const [activeTab, setActiveTab] = useState('Media');
+  const [assetTypeFilters, setAssetTypeFilters] = useState<Set<string>>(new Set());
+
+  const toggleAssetTypeFilter = (type: string) => {
+    setAssetTypeFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  };
 
   
 
@@ -550,6 +560,31 @@ export const ItensAside = ({
       </AnimatePresence>
     </div>
 
+    {/* Asset Type Filter Buttons */}
+    <div className="flex gap-2 mb-5 flex-shrink-0">
+      {([
+        { type: 'image', label: 'Images', icon: <ImageIcon size={11} /> },
+        { type: 'video', label: 'Video',  icon: <Film size={11} /> },
+        { type: 'audio', label: 'Audio',  icon: <Music size={11} /> },
+      ] as const).map(({ type, label, icon }) => {
+        const active = assetTypeFilters.has(type);
+        return (
+          <button
+            key={type}
+            onClick={() => toggleAssetTypeFilter(type)}
+            className={`flex-1 flex items-center justify-center gap-1.5 h-7 rounded-lg text-[9px] font-bold uppercase tracking-widest border transition-all duration-200
+              ${active
+                ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-400'
+                : 'bg-white/[0.02] border-white/5 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400'
+              }`}
+          >
+            {icon}
+            {label}
+          </button>
+        );
+      })}
+    </div>
+
     {/* GRID DE ASSETS DINÂMICO */}
     <div 
       className="grid gap-3"
@@ -559,8 +594,12 @@ export const ItensAside = ({
         alignItems: 'start'
       }}
     >
-      {filteredAssets.length > 0 ? (
-        filteredAssets.map((asset, index) => (
+      {(() => {
+        const displayAssets = assetTypeFilters.size > 0
+          ? filteredAssets.filter(a => assetTypeFilters.has(a.type))
+          : filteredAssets;
+        return displayAssets.length > 0 ? (
+        displayAssets.map((asset, index) => (
           <motion.div
             key={asset.path}
             initial={{ opacity: 0, y: 20 }}
@@ -639,13 +678,13 @@ export const ItensAside = ({
               </p>
             </div>
           </motion.div>
-        ))
-      ) : (
-        <div className="col-span-full py-20 text-center">
-          <Search size={32} className="mx-auto text-zinc-800 mb-4" />
-          <p className="text-zinc-600 text-xs italic font-mono uppercase tracking-tighter">No assets found_</p>
-        </div>
-      )}
+        )) ) : (
+          <div className="col-span-full py-20 text-center">
+            <Search size={32} className="mx-auto text-zinc-800 mb-4" />
+            <p className="text-zinc-600 text-xs italic font-mono uppercase tracking-tighter">No assets found_</p>
+          </div>
+        );
+      })()}
     </div>
   </div>
 
