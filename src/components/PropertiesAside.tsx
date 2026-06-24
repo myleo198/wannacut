@@ -95,6 +95,7 @@ const MASK_TYPES = [
   { value: 'rectangle', label: 'Rectangle' },
   { value: 'heart',     label: 'Heart'     },
   { value: 'star',      label: 'Star'      },
+   { value: 'trailer',   label: 'Trailer'   },
 ] as const;
 
 type MaskType = typeof MASK_TYPES[number]['value'];
@@ -143,14 +144,16 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
       prev.map(c => c.id === clip.id ? { ...c, mask: { ...DEFAULT_MASK, ...mask, ...patch } } : c)
     );
 
-  const hasPosition   = maskType !== 'none' && maskType !== 'linear';
+  const hasPosition   = maskType !== 'none' && maskType !== 'linear' && maskType !== 'trailer';
   const hasScaleXY    = maskType === 'radial';
-  const hasScale      = maskType !== 'none' && maskType !== 'linear' && !hasScaleXY;
+  const hasScale      = maskType !== 'none' && maskType !== 'linear' && !hasScaleXY && maskType !== 'trailer';
   const hasCorner     = maskType === 'rectangle';
   const hasFeather    = maskType !== 'none';
-  const hasInvert     = maskType !== 'none' && maskType !== 'linear';
+  const hasInvert     = maskType !== 'none' && maskType !== 'linear' && maskType !== 'trailer';
   const hasAngle      = maskType === 'linear';
-  const hasRotation   = maskType !== 'none' && maskType !== 'linear';
+  const hasRotation   = maskType !== 'none' && maskType !== 'linear' && maskType !== 'trailer';
+  const hasTrailer    = maskType === 'trailer';
+ 
 
   return (
     <section className="mb-6 p-3 bg-white/5 rounded-lg border border-white/5">
@@ -236,6 +239,37 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
               onChange={(v) => update({ cornerRadius: v })} />
           )}
 
+          {/* Feather */}
+          {hasFeather && (
+            <MaskSlider label="Feather" value={mask.feather ?? 0} min={0} max={100}
+              onChange={(v) => update({ feather: v })} />
+          )}
+
+
+          {hasTrailer && (
+            <>
+              <MaskSlider
+                label="Bar Size"
+                value={mask.scaleY ?? 0.15}
+                min={0} max={0.45} step={0.01}
+                onChange={(v) => update({ scaleY: v })}
+              />
+              <div className="mb-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">Center</span>
+                  <span className="text-[9px] font-mono text-zinc-300">{(mask.y ?? 0).toFixed(0)}px</span>
+                </div>
+                <input
+                  type="number"
+                  className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20"
+                  value={mask.y ?? 0}
+                  onChange={(e) => update({ y: parseFloat(e.target.value) || 0 })}
+                />
+                <p className="text-[9px] text-zinc-600 mt-1 italic">View only · use keyframes to animate</p>
+              </div>
+            </>
+          )}
+ 
           {/* Feather */}
           {hasFeather && (
             <MaskSlider label="Feather" value={mask.feather ?? 0} min={0} max={100}
@@ -465,6 +499,40 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                   }}
                 />
               </PropertyRow>
+
+                {/* TEXT ALIGN */}
+                <PropertyRow label="Text Align" keyframable={false}>
+                  <div className="grid grid-cols-3 gap-1">
+                    {([
+                      { value: 'left',   icon: <AlignLeft   size={12} /> },
+                      { value: 'center', icon: <AlignCenter size={12} /> },
+                      { value: 'right',  icon: <AlignRight  size={12} /> },
+                    ] as const).map(({ value, icon }) => {
+                      const active = (selectedClip.text_align || 'left') === value;
+                      return (
+                        <button
+                          key={value}
+                          onClick={() =>
+                            setClips((prev: any[]) =>
+                              prev.map(c =>
+                                c.id === selectedClip.id ? { ...c, text_align: value } : c
+                              )
+                            )
+                          }
+                          className="flex items-center justify-center py-1.5 rounded border transition-all"
+                          style={{
+                            borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.07)',
+                            background:  active ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
+                            color:       active ? '#f59e0b' : '#71717a',
+                          }}
+                          title={value.charAt(0).toUpperCase() + value.slice(1)}
+                        >
+                          {icon}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PropertyRow>
 
                 {/* FONT COLOR (Standard) */}
                 <PropertyRow label="Font Color" keyframable={false}>

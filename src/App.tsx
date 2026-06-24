@@ -7401,12 +7401,17 @@ return (
                             </div>
 
                             {/* Submenu Lateral */}
+                           {/* Submenu Lateral */}
                             {activeSubmenu === 'mask' && (
                               <div className="absolute left-[calc(100%-4px)] top-[-6px]
                               min-w-[170px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5
                               transform translate-x-2
                               max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-sky-700">
-                                {([
+                                {(contextMenu.clip.mask?.type === 'trailer' ? ([
+                                  { label: 'Bar Size',   value: 'mask.scaleY',  icon: <ZoomIn size={14} /> },
+                                  { label: 'Center',     value: 'mask.y',       icon: <Crosshair size={14} />, note: 'view only' },
+                                  { label: 'Feather',    value: 'mask.feather', icon: <Wind size={14} /> },
+                                ] as { label: string; value: string; icon: React.ReactNode; note?: string }[]) : ([
                                   { label: 'Position X',     value: 'mask.x',            icon: <Crosshair size={14} />,  note: 'view only' },
                                   { label: 'Position Y',     value: 'mask.y',            icon: <Crosshair size={14} />,  note: 'view only' },
                                   { label: 'Scale X',        value: 'mask.scaleX',       icon: <ZoomIn size={14} /> },
@@ -7416,7 +7421,7 @@ return (
                                   ...(contextMenu.clip.mask?.type === 'rectangle'
                                     ? [{ label: 'Corner Radius', value: 'mask.cornerRadius', icon: <Layers size={14} /> }]
                                     : []),
-                                ] as { label: string; value: string; icon: React.ReactNode; note?: string }[]).map((sub) => (
+                                ] as { label: string; value: string; icon: React.ReactNode; note?: string }[])).map((sub) => (
                                   <button
                                     key={sub.value}
                                     onClick={(e) => {
