@@ -50,6 +50,10 @@ pub struct YtDlpState(pub Mutex<Option<std::process::Child>>);
 
 pub struct YtDlpPid(pub AtomicU32); // 0 = nenhum processo ativo
 
+use sysinfo::{System, CpuRefreshKind};
+use wgpu::{Instance, Backends};
+
+
 mod plans;
 mod limits;
 mod vocal_remover;
@@ -1630,14 +1634,32 @@ async fn transfer_folder_content(old_path: String, new_path: String) -> Result<(
     Ok(())
 }
 
+
 #[tauri::command]
-async fn get_system_gpus() -> Vec<String> {
-    // Exemplo usando detecção simples.
-    // Em produção, você pode usar a crate 'wgpu' ou 'sysinfo'
-    vec![
-        "NVIDIA GeForce RTX 3060".into(),
-        "Intel Iris Xe Graphics".into(),
-    ]
+async fn get_system_gpus() -> (Vec<String>, Vec<String>) {
+    // Inicializa o sistema apenas com informações de CPU para ser rápido
+    let mut sys = System::new_with_specifics(
+        sysinfo::RefreshKind::new().with_cpu(CpuRefreshKind::everything())
+    );
+    
+    sys.refresh_cpu();
+
+    // No sysinfo 0.30+, cpu.brand() já está disponível sem precisar de traits extras
+    let cpus: Vec<String> = sys.cpus()
+        .iter()
+        .map(|cpu| cpu.brand().to_string())
+        .collect::<std::collections::HashSet<String>>()
+        .into_iter()
+        .collect();
+
+    // Detecção de GPUs via wgpu (conforme sugerido antes)
+    let instance = wgpu::Instance::default();
+    let gpus: Vec<String> = instance.enumerate_adapters(wgpu::Backends::all())
+        .iter()
+        .map(|adapter| adapter.get_info().name)
+        .collect();
+
+    (cpus, gpus)
 }
 
 #[tauri::command]

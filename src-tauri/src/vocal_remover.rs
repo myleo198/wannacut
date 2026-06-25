@@ -1,12 +1,13 @@
 // vocal_remover.rs — WannaCut Vocal Remover
 //
 // Cargo.toml dependencies needed:
-// hound = "3"
 // reqwest = { version = "0.12", features = ["json", "stream"] }
 // serde_json = "1"
 // serde = { version = "1", features = ["derive"] }
 // chrono = { version = "0.4", features = ["serde"] }
 // tokio = { version = "1", features = ["process"] }
+// flate2 = "1"
+// tar = "0.4"
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,18 +17,19 @@ use crate::limits::limits_for;
 use crate::plans::validate_offline;
 
 // ─────────────────────────────────────────────
-// CONSTANTS — update URLs after uploading to CDN
+// CONSTANTS
 // ─────────────────────────────────────────────
 
 #[cfg(target_os = "linux")]
-const ENGINE_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/engines/htdemucs_inference_linux";
+const ENGINE_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/engines/htdemucs_engine_linux.tar.gz";
 #[cfg(target_os = "windows")]
-const ENGINE_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/engines/htdemucs_inference_windows.exe";
+const ENGINE_URL: &str = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/engines/htdemucs_engine_windows.tar.gz";
 
-const MODEL_URL: &str   = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/models/htdemucs.safetensors";
-const ENGINE_FILENAME: &str = "htdemucs_inference";
-const MODEL_FILENAME: &str  = "htdemucs.safetensors";
-const USAGE_KEY_VOCAL: &str = "usage_vocal_remover";
+const MODEL_URL: &str        = "https://pub-591b6277df304d089f3df855a0e82176.r2.dev/models/htdemucs.safetensors";
+const ENGINE_DIRNAME: &str   = "htdemucs_inference";   // folder name inside tar.gz
+const ENGINE_BINARY: &str    = "htdemucs_inference";   // executable inside the folder
+const MODEL_FILENAME: &str   = "htdemucs.safetensors";
+const USAGE_KEY_VOCAL: &str  = "usage_vocal_remover";
 
 // ─────────────────────────────────────────────
 // ERRORS
@@ -39,7 +41,7 @@ pub enum VocalRemoverError {
     EngineNotFound,
     ModelNotFound,
     DownloadFailed(String),
-    AudioReadError(String),
+    ExtractFailed(String),
     InferenceError(String),
     SettingsError(String),
 }
@@ -55,8 +57,8 @@ impl std::fmt::Display for VocalRemoverError {
                 write!(f, "AI model not found. Please download it first."),
             VocalRemoverError::DownloadFailed(e) =>
                 write!(f, "Download failed: {e}"),
-            VocalRemoverError::AudioReadError(e) =>
-                write!(f, "Failed to read audio: {e}"),
+            VocalRemoverError::ExtractFailed(e) =>
+                write!(f, "Extraction failed: {e}"),
             VocalRemoverError::InferenceError(e) =>
                 write!(f, "Inference error: {e}"),
             VocalRemoverError::SettingsError(e) =>
@@ -67,17 +69,26 @@ impl std::fmt::Display for VocalRemoverError {
 
 // ─────────────────────────────────────────────
 // PATHS
+// engines dir:  {settings_folder}/engines/
+// engine dir:   {settings_folder}/engines/htdemucs_inference/
+// engine bin:   {settings_folder}/engines/htdemucs_inference/htdemucs_inference
+// model:        {settings_folder}/models/htdemucs.safetensors
 // ─────────────────────────────────────────────
 
-fn engine_path(workspace: &str) -> PathBuf {
-    #[cfg(target_os = "windows")]
-    return PathBuf::from(workspace).join("engines").join(format!("{ENGINE_FILENAME}.exe"));
-    #[cfg(not(target_os = "windows"))]
-    return PathBuf::from(workspace).join("engines").join(ENGINE_FILENAME);
+fn engines_dir(settings_folder: &str) -> PathBuf {
+    PathBuf::from(settings_folder).join("engines")
 }
 
-fn model_path(workspace: &str) -> PathBuf {
-    PathBuf::from(workspace).join("models").join(MODEL_FILENAME)
+fn engine_dir(settings_folder: &str) -> PathBuf {
+    engines_dir(settings_folder).join(ENGINE_DIRNAME)
+}
+
+fn engine_bin(settings_folder: &str) -> PathBuf {
+    engine_dir(settings_folder).join(ENGINE_BINARY)
+}
+
+fn model_path(settings_folder: &str) -> PathBuf {
+    PathBuf::from(settings_folder).join("models").join(MODEL_FILENAME)
 }
 
 // ─────────────────────────────────────────────
@@ -107,26 +118,54 @@ async fn download_file(url: &str, dest: &Path) -> Result<(), VocalRemoverError> 
     fs::write(dest, bytes)
         .map_err(|e| VocalRemoverError::DownloadFailed(e.to_string()))?;
 
-    // Make executable on Linux
+    Ok(())
+}
+
+// ─────────────────────────────────────────────
+// TAR.GZ EXTRACTION
+// ─────────────────────────────────────────────
+
+fn extract_engine(tar_path: &Path, dest_dir: &Path) -> Result<(), VocalRemoverError> {
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+
+    let file = fs::File::open(tar_path)
+        .map_err(|e| VocalRemoverError::ExtractFailed(e.to_string()))?;
+
+    let gz  = GzDecoder::new(file);
+    let mut archive = Archive::new(gz);
+
+    archive.unpack(dest_dir)
+        .map_err(|e| VocalRemoverError::ExtractFailed(e.to_string()))?;
+
+    // Make the binary and wrapper executable on Linux
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(dest)
-            .map_err(|e| VocalRemoverError::DownloadFailed(e.to_string()))?
-            .permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(dest, perms)
-            .map_err(|e| VocalRemoverError::DownloadFailed(e.to_string()))?;
+
+        let bin = dest_dir.join(ENGINE_DIRNAME).join(ENGINE_BINARY);
+        let bin_inner = dest_dir.join(ENGINE_DIRNAME).join(format!("{ENGINE_BINARY}_bin"));
+
+        for path in [&bin, &bin_inner] {
+            if path.exists() {
+                let mut perms = fs::metadata(path)
+                    .map_err(|e| VocalRemoverError::ExtractFailed(e.to_string()))?
+                    .permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(path, perms)
+                    .map_err(|e| VocalRemoverError::ExtractFailed(e.to_string()))?;
+            }
+        }
     }
+
+    // Remove the tar.gz after successful extraction
+    let _ = fs::remove_file(tar_path);
 
     Ok(())
 }
 
 // ─────────────────────────────────────────────
 // USAGE COUNTER
-// Stored in wannacut_settings.json:
-// { "usage_vocal_remover": { "date": "2026-06-20", "count": 3 } }
-// Uses load_raw_map pattern — never overwrites React fields.
 // ─────────────────────────────────────────────
 
 fn today_str() -> String {
@@ -213,34 +252,42 @@ impl OutputMode {
 // TAURI COMMANDS
 // ─────────────────────────────────────────────
 
-/// Check if engine and model are already downloaded.
+/// Check if engine folder and model are already present.
 #[tauri::command]
-pub fn vocal_remover_ready(workspace: String) -> serde_json::Value {
+pub fn vocal_remover_ready(settings_folder: String) -> serde_json::Value {
     serde_json::json!({
-        "engine": engine_path(&workspace).exists(),
-        "model":  model_path(&workspace).exists(),
+        "engine": engine_bin(&settings_folder).exists(),
+        "model":  model_path(&settings_folder).exists(),
     })
 }
 
-/// Download engine binary + model file (called on first use).
-/// Shows progress via Tauri events.
+/// Download engine tar.gz + model, extract engine.
 #[tauri::command]
 pub async fn vocal_remover_download(
     app: tauri::AppHandle,
-    workspace: String,
+    settings_folder: String,
 ) -> Result<(), String> {
     use tauri::Emitter;
 
-    let engine = engine_path(&workspace);
-    let model  = model_path(&workspace);
-
-    if !engine.exists() {
+    // ── Engine ────────────────────────────────────────────────────
+    if !engine_bin(&settings_folder).exists() {
         app.emit("vocal_remover_progress", serde_json::json!({
             "step": "engine", "status": "downloading"
         })).ok();
 
-        download_file(ENGINE_URL, &engine)
+        // Download tar.gz to a temp path
+        let tar_path = engines_dir(&settings_folder).join("htdemucs_engine.tar.gz");
+
+        download_file(ENGINE_URL, &tar_path)
             .await
+            .map_err(|e| e.to_string())?;
+
+        app.emit("vocal_remover_progress", serde_json::json!({
+            "step": "engine", "status": "extracting"
+        })).ok();
+
+        // Extract into engines dir — creates htdemucs_inference/ subfolder
+        extract_engine(&tar_path, &engines_dir(&settings_folder))
             .map_err(|e| e.to_string())?;
 
         app.emit("vocal_remover_progress", serde_json::json!({
@@ -248,12 +295,13 @@ pub async fn vocal_remover_download(
         })).ok();
     }
 
-    if !model.exists() {
+    // ── Model ─────────────────────────────────────────────────────
+    if !model_path(&settings_folder).exists() {
         app.emit("vocal_remover_progress", serde_json::json!({
             "step": "model", "status": "downloading"
         })).ok();
 
-        download_file(MODEL_URL, &model)
+        download_file(MODEL_URL, &model_path(&settings_folder))
             .await
             .map_err(|e| e.to_string())?;
 
@@ -265,17 +313,7 @@ pub async fn vocal_remover_download(
     Ok(())
 }
 
-/// Main command — remove vocals from an audio file.
-///
-/// React usage:
-///   await invoke("remove_vocals", {
-///     settingsFolder: wannacut_settings_folder,
-///     workspace: rootPath,
-///     audioPath: "/path/to/audio.wav",
-///     outputMode: "vocals_only" | "instrumental_only" | "both",
-///   })
-///
-/// Returns: { vocals?: string, instrumental?: string }
+/// Remove vocals from an audio file.
 #[tauri::command]
 pub async fn remove_vocals(
     settings_folder: String,
@@ -299,22 +337,22 @@ pub async fn remove_vocals(
     }
 
     // ── 3. Check engine and model exist ───────────────────────────
-    let engine = engine_path(&workspace);
-    let model  = model_path(&workspace);
+    let bin   = engine_bin(&settings_folder);
+    let model = model_path(&settings_folder);
 
-    if !engine.exists() {
+    if !bin.exists() {
         return Err(VocalRemoverError::EngineNotFound.to_string());
     }
     if !model.exists() {
         return Err(VocalRemoverError::ModelNotFound.to_string());
     }
 
-    // ── 4. Output dir = same folder as input ─────────────────────
-    let input  = Path::new(&audio_path);
+    // ── 4. Output dir = extracted_audios of current project ───────
+    let input      = Path::new(&audio_path);
     let output_dir = input.parent().unwrap_or(Path::new("."));
 
-    // ── 5. Call Python engine as subprocess ───────────────────────
-    let output = tokio::process::Command::new(&engine)
+    // ── 5. Call engine subprocess ─────────────────────────────────
+    let output = tokio::process::Command::new(&bin)
         .arg("--input")      .arg(&audio_path)
         .arg("--output_dir") .arg(output_dir)
         .arg("--mode")       .arg(output_mode.as_str())
@@ -323,10 +361,9 @@ pub async fn remove_vocals(
         .await
         .map_err(|e| VocalRemoverError::InferenceError(e.to_string()).to_string())?;
 
-    // ── 6. Parse JSON result from stdout ─────────────────────────
+    // ── 6. Parse JSON from stdout ─────────────────────────────────
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Try to parse error JSON from stderr
         if let Ok(err_json) = serde_json::from_str::<Value>(&stderr) {
             if let Some(msg) = err_json.get("error").and_then(|v| v.as_str()) {
                 return Err(VocalRemoverError::InferenceError(msg.to_string()).to_string());

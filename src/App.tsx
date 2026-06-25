@@ -1442,8 +1442,11 @@ const vocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only
     return;
   }
 
+   console.log('[vocalRemover] settingsFolder:', settingsFolder);
+  console.log('[vocalRemover] rootPath:', rootPath);
+
   const ready = await invoke<{ engine: boolean; model: boolean }>('vocal_remover_ready', {
-    workspace: rootPath,
+    settingsFolder: settingsFolder,
   });
 
   if (!ready.engine || !ready.model) {
@@ -1474,7 +1477,7 @@ const startVocalEngineDownload = async () => {
   });
 
   try {
-    await invoke('vocal_remover_download', { workspace: rootPath });
+    await invoke('vocal_remover_download', { settingsFolder: settingsFolder });
     setVocalEngineStep('done');
 
     // Auto-run the pending action

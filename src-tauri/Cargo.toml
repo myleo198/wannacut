@@ -43,3 +43,7 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 ort = { version = "2.0.0-rc.12", features = ["cuda", "directml"] }
 hound = "3"
+sysinfo = "0.30"
+wgpu = "0.19" # Ou a versão mais recente compatível
+flate2 = "1"
+tar = "0.4"
