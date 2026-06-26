@@ -436,6 +436,11 @@ export default function App() {
 
 
 
+ 
+
+
+
+
 
   useEffect(() => {
     // 1. Filtra os projetos que estão com status 'success' neste ciclo
@@ -591,6 +596,47 @@ const pasteEffectsTrack = (target_track: number) => {
     })
   );
 };
+
+//PART TO COPY AND PASTE MAPS
+
+const [copiedMask, setcopiedMask ] = useState<any>({});
+
+const pasteMask = (target_clip:Clip) => 
+{
+
+
+    if(copiedMask.mask)  
+      target_clip.mask = copiedMask.mask
+
+
+    setClips( prev => prev.map( c => c.id == target_clip.id ? target_clip : c ))
+
+
+
+
+}
+
+
+const pasteMaskTrack = (target_track: number) => {
+  setClips((prevClips) =>
+    prevClips.map((clip) => {
+      // Verifica se o clipe pertence à track alvo
+      if (clip.trackId !== target_track) {
+        return clip;
+      }
+
+      // Cria uma cópia do clipe para mutar com segurança
+      const updatedClip = { ...clip };
+
+      
+      if (copiedMask.mask) updatedClip.mask = copiedMask.mask;
+      
+
+      return updatedClip;
+    })
+  );
+};
+
 
 
 // ... dentro do seu componente principal:
@@ -1561,6 +1607,8 @@ const startExport = async (format: ExportFormat) => {
     const fps = projectConfig.fps || 30;
     const capturedProjectName = projectName; // capture for closures
 
+  alert(wannacutSettings.gpu)
+
     await exportVideo({
       targetPath: targetPath as string,
       fps,
@@ -1584,6 +1632,7 @@ const startExport = async (format: ExportFormat) => {
           )
         );
       },
+      gpuName: wannacutSettings.gpu ?? undefined,
       onError: (msg) => {
         console.error('Export Error:', msg);
         setRenderingProjects(prev => prev.filter(r => r.projectName !== capturedProjectName));
@@ -2259,6 +2308,17 @@ useEffect(() => {
     antialias: true,
     powerPreference: "high-performance"
   });
+
+
+  if (wannacutSettings.gpu) {
+    renderer.setPixelRatio(window.devicePixelRatio);
+    console.log(`🎮 GPU ativa: ${wannacutSettings.gpu}`);
+  } else {
+    renderer.setPixelRatio(1); // sem GPU: poupa processamento
+    console.log('🖥️ Renderizando via software (sem GPU selecionada)');
+  }
+
+
   renderer.setSize(projectConfig.width, projectConfig.height, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   rendererRef.current = renderer;
@@ -2299,6 +2359,18 @@ useEffect(() => {
   console.log(`🔧 Three.js redimensionado para ${width}×${height}`);
 }, [projectConfig.width, projectConfig.height]);
 
+
+
+useEffect(() => {
+  if (!rendererRef.current) return;
+  if (wannacutSettings.gpu) {
+    rendererRef.current.setPixelRatio(window.devicePixelRatio);
+    console.log(`🎮 GPU aplicada ao renderer: ${wannacutSettings.gpu}`);
+  } else {
+    rendererRef.current.setPixelRatio(1);
+    console.log('🖥️ GPU removida — renderer em modo software');
+  }
+}, [wannacutSettings.gpu]);
 
 
 const newDrawFrame = async (time:number | null = null, audios: any| null = null) => 
@@ -2678,13 +2750,13 @@ const MAX_HISTORY_STEPS = 100;
 
   useEffect(() => {
   // Keep ref in sync so closures (e.g. handleNativeDrop) always read the latest value
-  pixelsPerSecondRef.current = pixelsPerSecond;
+  //pixelsPerSecondRef.current = pixelsPerSecond;
 
   // Whenever the zoom changes, we visually reposition the needle.
   if (playheadRef.current) {
-    const currentPos = currentTimeRef.current * pixelsPerSecond;
+    const currentPos = currentTimeRef.current * pixelsPerSecondRef.current;
     playheadRef.current.style.transform = `translateX(${currentPos}px)`;
-    timelineContainerRef.current.scrollLeft= currentPos
+    timelineContainerRef.current.scrollLeft= currentPos - asidetrackwidth
   }
 }, [pixelsPerSecond]);
 
@@ -6857,7 +6929,7 @@ return (
      
 
      {/* Header da Timeline / Ruler */}
-  <div className="flex bg-zinc-900/50" style = {{width: 300 * pixelsPerSecond }}>
+  <div className="flex bg-zinc-900/50" style = {{width: (totalDuration + 600) * pixelsPerSecond }}>
     <div className="w-50 shrink-0 border-r border-white/5" /> 
     
     <div 
@@ -7090,6 +7162,20 @@ return (
             </button>
 
 
+
+            <button
+              onClick={() => {
+                pasteMaskTrack(trackContextMenu.trackId);
+                setTrackContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
+            >
+              <ClipboardPaste size={14} className="opacity-70" />
+              <span> Paste Mask </span>
+            </button>
+
+
+
           </div>
         );
       })()}
@@ -7236,12 +7322,39 @@ return (
 
                             <button 
                               onClick={() => {
+                                setcopiedMask(contextMenu.clip)
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                            >
+                              <Copy size={14} className="opacity-70" />
+                              <span> Copy Mask </span>
+                            </button>
+
+
+                            {
+                              copiedMask && Object.keys(copiedMask).length > 0 && 
+
+                                <button 
+                                  onClick={() => {
+                                    pasteMask(contextMenu.clip)
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                                >
+                                  <ClipboardPaste size={14} className="opacity-70" />
+                                  <span> Paste Mask </span>
+                                </button>
+                            }
+
+
+
+                            <button 
+                              onClick={() => {
                                 setcopiedEffects(contextMenu.clip)
                               }}
                               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                             >
                               <Copy size={14} className="opacity-70" />
-                              <span> Copy Effects and Fades </span>
+                              <span> Copy Effects </span>
                             </button>
 
 

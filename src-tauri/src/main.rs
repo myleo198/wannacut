@@ -50,8 +50,7 @@ pub struct YtDlpState(pub Mutex<Option<std::process::Child>>);
 
 pub struct YtDlpPid(pub AtomicU32); // 0 = nenhum processo ativo
 
-use sysinfo::{System, CpuRefreshKind};
-use wgpu::{Instance, Backends};
+use wgpu;
 
 
 mod plans;
@@ -1636,30 +1635,12 @@ async fn transfer_folder_content(old_path: String, new_path: String) -> Result<(
 
 
 #[tauri::command]
-async fn get_system_gpus() -> (Vec<String>, Vec<String>) {
-    // Inicializa o sistema apenas com informações de CPU para ser rápido
-    let mut sys = System::new_with_specifics(
-        sysinfo::RefreshKind::new().with_cpu(CpuRefreshKind::everything())
-    );
-    
-    sys.refresh_cpu();
-
-    // No sysinfo 0.30+, cpu.brand() já está disponível sem precisar de traits extras
-    let cpus: Vec<String> = sys.cpus()
-        .iter()
-        .map(|cpu| cpu.brand().to_string())
-        .collect::<std::collections::HashSet<String>>()
-        .into_iter()
-        .collect();
-
-    // Detecção de GPUs via wgpu (conforme sugerido antes)
+async fn get_system_gpus() -> Vec<String> {
     let instance = wgpu::Instance::default();
-    let gpus: Vec<String> = instance.enumerate_adapters(wgpu::Backends::all())
+    instance.enumerate_adapters(wgpu::Backends::all())
         .iter()
         .map(|adapter| adapter.get_info().name)
-        .collect();
-
-    (cpus, gpus)
+        .collect()
 }
 
 #[tauri::command]
@@ -1918,6 +1899,25 @@ fn main() {
         Ok(())
     }
 
+    /// Retorna os argumentos de aceleração de hardware para o FFmpeg com base na GPU escolhida.
+    /// O nome da GPU vem do wannacut_settings.json (campo `gpu`, escolhido pelo usuário).
+    fn get_hwaccel_args(gpu_name: Option<&str>) -> Vec<String> {
+        let name = match gpu_name {
+            Some(n) if !n.is_empty() => n.to_lowercase(),
+            _ => return vec![],
+        };
+        if name.contains("nvidia") || name.contains("geforce") || name.contains("quadro") || name.contains("rtx") || name.contains("gtx") {
+            vec!["-hwaccel".into(), "cuda".into()]
+        } else if name.contains("amd") || name.contains("radeon") {
+            vec!["-hwaccel".into(), "vaapi".into(), "-vaapi_device".into(), "/dev/dri/renderD128".into()]
+        } else if name.contains("intel") {
+            vec!["-hwaccel".into(), "qsv".into()]
+        } else {
+            // GPU genérica reconhecida mas sem backend específico: deixa o FFmpeg decidir
+            vec!["-hwaccel".into(), "auto".into()]
+        }
+    }
+
     /// Após todos os frames e o WAV serem salvos, monta o vídeo final com FFmpeg:
     ///   1. PNGs → vídeo sem áudio
     ///   2. Vídeo + WAV → arquivo final (ou só vídeo se não há WAV)
@@ -1934,6 +1934,7 @@ fn main() {
         duration: f64,
         width: u32,
         height: u32,
+        gpu_name: Option<String>,
     ) -> Result<(), String> {
         let proj = std::path::Path::new(&project_path);
         let frames_dir = proj.join("export_frames");
@@ -1941,30 +1942,49 @@ fn main() {
         let video_only_path = proj.join("export_video_only.mp4");
         let frame_pattern = frames_dir.join("%06d.png");
 
+        let hw_args = get_hwaccel_args(gpu_name.as_deref());
+        println!("[Export] GPU: {:?} → hwaccel args: {:?}", gpu_name, hw_args);
+
+        // Escolhe o codec de vídeo com base na GPU disponível
+        // Com CUDA (NVIDIA) → h264_nvenc, com VAAPI (AMD/Intel) → h264_vaapi, fallback → libx264
+        let (vcodec, extra_encode_args): (&str, Vec<String>) = {
+            let name = gpu_name.as_deref().unwrap_or("").to_lowercase();
+            if name.contains("nvidia") || name.contains("geforce") || name.contains("rtx") || name.contains("gtx") || name.contains("quadro") {
+                ("h264_nvenc", vec!["-preset".into(), "p4".into(), "-rc".into(), "vbr".into(), "-cq".into(), "19".into()])
+            } else if name.contains("amd") || name.contains("radeon") {
+                ("h264_vaapi", vec!["-vf".into(), format!("scale={}:{},format=nv12,hwupload", width, height), "-qp".into(), "20".into()])
+            } else if name.contains("intel") {
+                ("h264_qsv", vec!["-preset".into(), "medium".into(), "-global_quality".into(), "20".into()])
+            } else {
+                // Software: libx264 (comportamento original)
+                ("libx264", vec!["-preset".into(), "fast".into(), "-crf".into(), "18".into()])
+            }
+        };
+
         // -----------------------------------------------------------------------
-        // PASSO 1: PNGs → vídeo sem áudio
+        // PASSO 1: PNGs → vídeo sem áudio (com aceleração se disponível)
         // -----------------------------------------------------------------------
+        let mut step1_args: Vec<String> = vec!["-y".into()];
+        // Hwaccel args vão ANTES do -i (para decodificação/pipeline de GPU)
+        step1_args.extend(hw_args.clone());
+        step1_args.extend([
+            "-framerate".into(), fps.to_string(),
+            "-i".into(), frame_pattern.to_string_lossy().to_string(),
+            "-c:v".into(), vcodec.into(),
+        ]);
+        step1_args.extend(extra_encode_args);
+        // Scale via vf apenas se não for VAAPI (que já inclui scale no filtro acima)
+        let name_lower = gpu_name.as_deref().unwrap_or("").to_lowercase();
+        if !name_lower.contains("amd") && !name_lower.contains("radeon") {
+            step1_args.extend(["-vf".into(), format!("scale={}:{}", width, height)]);
+        }
+        step1_args.extend(["-pix_fmt".into(), "yuv420p".into()]);
+        step1_args.push(video_only_path.to_string_lossy().to_string());
+
         let step1 = app_handle
             .shell()
-            .command("ffmpeg") // Corrigido para .command() minúsculo (comando global)
-            .args([
-                "-y",
-                "-framerate",
-                &fps.to_string(),
-                "-i",
-                &frame_pattern.to_string_lossy(),
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-crf",
-                "18",
-                "-pix_fmt",
-                "yuv420p",
-                "-vf",
-                &format!("scale={}:{}", width, height),
-                &video_only_path.to_string_lossy(),
-            ])
+            .command("ffmpeg")
+            .args(step1_args)
             .output()
             .await
             .map_err(|e| format!("FFmpeg (frames→video) falhou: {}", e))?;

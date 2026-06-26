@@ -81,6 +81,7 @@ export interface ExportOptions {
   exportCodec?: ExportCodec;
   onProgress?: (percent: number) => void;
   onError?: (msg: string) => void;
+  gpuName?: string | null; 
 }
 
 export async function exportVideo(opts: ExportOptions): Promise<void> {
@@ -93,6 +94,7 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
     getInterpolatedValueWithFades, settingsFolder, onProgress, onError,
     exportKind  = 'video',
     exportCodec = 'mp4',
+    gpuName
   } = opts;
 
   // ── Derived flags ────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
         targetPath,
         codec: exportCodec,   // 'mp3' | 'wav'
         duration,
+        gpuName: gpuName ?? null,
       });
 
       onProgress?.(100);
@@ -269,6 +272,7 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       width:  W,
       height: H,
       codec:  exportCodec,   // 'mp4' | 'mkv'
+      gpuName: gpuName ?? null,
     });
 
     onProgress?.(100);
