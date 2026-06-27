@@ -24,7 +24,8 @@ import {
   MoreVertical,
   Key,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  ScanSearch,
 } from 'lucide-react';
 
 // ── Freesound types ──────────────────────────────────────────
@@ -44,6 +45,71 @@ interface FreesoundSound {
 }
 
 type LicenseFilter = 'cc0' | 'ccby' | 'ccnc';
+
+// ── Pexels types ──────────────────────────────────────────────
+interface PexelsPhotoSrc {
+  original: string;
+  large2x: string;
+  large: string;
+  medium: string;
+  small: string;
+  tiny: string;
+}
+
+interface PexelsPhoto {
+  id: number;
+  width: number;
+  height: number;
+  url: string;
+  photographer: string;
+  photographer_url: string;
+  alt: string;
+  src: PexelsPhotoSrc;
+}
+
+type PexelsOrientation = 'all' | 'landscape' | 'portrait' | 'square';
+type PexelsMediaType = 'image' | 'video' | 'both';
+
+// ── Pexels Video types ────────────────────────────────────────
+interface PexelsVideoFile {
+  id: number;
+  quality: string | null;
+  file_type: string | null;
+  width: number | null;
+  height: number | null;
+  link: string | null;
+}
+
+interface PexelsVideoPicture {
+  id: number;
+  picture: string;
+  nr: number;
+}
+
+interface PexelsVideoUser {
+  id: number;
+  name: string;
+  url: string | null;
+}
+
+interface PexelsVideo {
+  id: number;
+  width: number;
+  height: number;
+  url: string | null;
+  duration: number;
+  user: PexelsVideoUser;
+  video_files: PexelsVideoFile[];
+  video_pictures: PexelsVideoPicture[];
+  image: string | null;
+  full_res: null;
+  tags: unknown[];
+}
+
+// unified grid item
+type PexelsItem =
+  | { kind: 'photo'; data: PexelsPhoto }
+  | { kind: 'video'; data: PexelsVideo };
 
 function getLicenseKind(licenseUrl: string): LicenseFilter | null {
   const l = licenseUrl.toLowerCase();
@@ -92,6 +158,7 @@ interface ItensAsideProps {
   currentProjectPath: string | null;
   loadAssets: () => void;
   settingsFolder: string | null;
+  showNotify: any | void;
 }
 
 
@@ -172,6 +239,7 @@ export const ItensAside = ({
   currentProjectPath,
   loadAssets,
   settingsFolder,
+  showNotify
 }: ItensAsideProps) => {
   const [activeTab, setActiveTab] = useState('Media');
   const [assetTypeFilters, setAssetTypeFilters] = useState<Set<string>>(new Set());
@@ -190,6 +258,7 @@ export const ItensAside = ({
   const menuOptions = [
     { id: 'Media', icon: <Film size={20} />, label: 'Media', color: 'fuchsia' },
     { id: 'Sound', icon: <Music size={20} />, label: 'Sounds Library', color: 'rose' },
+    { id: 'Images', icon: <ImageIcon size={20} />, label: 'Image Library', color: 'sky' },
     { id: 'Text', icon: <Type size={20} />, label: 'Text', color: 'cyan' },
     { id: 'Effects', icon: <Sparkles size={20} />, label: 'Effects', color: 'purple' },
     { id: 'Transitions', icon: <Layers size={20} />, label: 'Transitions', color: 'blue' },
@@ -201,7 +270,8 @@ export const ItensAside = ({
     cyan: "bg-cyan-600/20 text-cyan-400",
     purple: "bg-purple-600/20 text-purple-400",
     blue: "bg-blue-600/20 text-blue-400",
-    rose: "bg-rose-600/20 text-rose-400"
+    rose: "bg-rose-600/20 text-rose-400",
+    sky: "bg-sky-600/20 text-sky-400",
   };
 
 
@@ -228,11 +298,42 @@ export const ItensAside = ({
   const [keySaving, setKeySaving]               = useState(false);
   const keyMenuRef = useRef<HTMLDivElement>(null);
 
+  // ── Pexels Image Library state ────────────────────────────
+  const [pexelsApiKey, setPexelsApiKey]           = useState<string | null>(null);
+  const [pexelsApiKeyLoading, setPexelsApiKeyLoading] = useState(false);
+  const [pexelsQuery, setPexelsQuery]             = useState('');
+  const [pexelsResults, setPexelsResults]         = useState<PexelsItem[]>([]);
+  const [pexelsLoading, setPexelsLoading]         = useState(false);
+  const [pexelsOrientation, setPexelsOrientation] = useState<PexelsOrientation>('landscape');
+  const [pexelsMediaType, setPexelsMediaType]     = useState<PexelsMediaType>('image');
+  const [pexelsDownloading, setPexelsDownloading] = useState<Record<number, boolean>>({});
+  const [pexelsDownloaded, setPexelsDownloaded]   = useState<Record<number, boolean>>({});
+  const [pexelsProgress, setPexelsProgress]       = useState<Record<number, number>>({});
+  const [showPexelsKeyMenu, setShowPexelsKeyMenu] = useState(false);
+  const [showPexelsKeyModal, setShowPexelsKeyModal] = useState(false);
+  const [pexelsKeyModalInput, setPexelsKeyModalInput] = useState('');
+  const [pexelsKeySaving, setPexelsKeySaving]     = useState(false);
+  const pexelsKeyMenuRef = useRef<HTMLDivElement>(null);
+  const pexelsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   // ── Estados para o Player de Preview de Áudio ──────────────────
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [playbackProgress, setPlaybackProgress] = useState<Record<number, number>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+
+  const [license, setLicense] = useState(null);
+
+  useEffect(() => {
+    invoke("get_license_state", { settingsFolder: settingsFolder })
+      .then(res => setLicense(res));
+
+
+  }, []);
+
+
+
 
   // Limpa o áudio se o componente desmontar ou mudar de aba
   useEffect(() => {
@@ -317,6 +418,161 @@ export const ItensAside = ({
 
     if (audioRef.current.duration) {
       audioRef.current.currentTime = audioRef.current.duration * percentage;
+    }
+  };
+
+  // ── Pexels: carrega API key ao abrir a aba Images ─────────
+  useEffect(() => {
+    if (activeTab !== 'Images') return;
+    if (!settingsFolder) { setPexelsApiKey(null); return; }
+    setPexelsApiKeyLoading(true);
+    invoke<string | null>('read_pexels_api_key', { settingsFolder })
+      .then(key => setPexelsApiKey(key ?? null))
+      .catch(() => setPexelsApiKey(null))
+      .finally(() => setPexelsApiKeyLoading(false));
+  }, [activeTab, settingsFolder]);
+
+  // ── Fecha menu Pexels ao clicar fora ─────────────────────
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (pexelsKeyMenuRef.current && !pexelsKeyMenuRef.current.contains(e.target as Node)) {
+        setShowPexelsKeyMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleSavePexelsApiKey = async () => {
+    if (!settingsFolder || !pexelsKeyModalInput.trim()) return;
+    setPexelsKeySaving(true);
+    try {
+      await invoke('save_pexels_api_key', {
+        settingsFolder,
+        apiKey: pexelsKeyModalInput.trim(),
+      });
+      setPexelsApiKey(pexelsKeyModalInput.trim());
+      setShowPexelsKeyModal(false);
+      setPexelsKeyModalInput('');
+    } catch (err) {
+      console.error('Erro ao salvar Pexels API key:', err);
+    } finally {
+      setPexelsKeySaving(false);
+    }
+  };
+
+  const searchPexels = useCallback(async (q: string, orientation: PexelsOrientation, mediaType: PexelsMediaType) => {
+    if (!q.trim()) { setPexelsResults([]); return; }
+    if (!pexelsApiKey) return;
+    setPexelsLoading(true);
+    try {
+      const orientArg = orientation === 'all' ? '' : orientation;
+
+      const [photos, videos] = await Promise.all([
+        (mediaType === 'image' || mediaType === 'both')
+          ? invoke<PexelsPhoto[]>('search_pexels', { query: q.trim(), orientation: orientArg, apiKey: pexelsApiKey })
+          : Promise.resolve([] as PexelsPhoto[]),
+        (mediaType === 'video' || mediaType === 'both')
+          ? invoke<PexelsVideo[]>('search_pexels_videos', { query: q.trim(), orientation: orientArg, apiKey: pexelsApiKey })
+          : Promise.resolve([] as PexelsVideo[]),
+      ]);
+
+      // Interleave results: photo, video, photo, video...
+      const merged: PexelsItem[] = [];
+      const maxLen = Math.max(photos.length, videos.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (i < photos.length) merged.push({ kind: 'photo', data: photos[i] });
+        if (i < videos.length) merged.push({ kind: 'video', data: videos[i] });
+      }
+      setPexelsResults(merged);
+    } catch (err) {
+      console.error('Pexels search error', err);
+      setPexelsResults([]);
+    } finally {
+      setPexelsLoading(false);
+    }
+  }, [pexelsApiKey]);
+
+  // Debounce Pexels
+  useEffect(() => {
+    if (activeTab !== 'Images') return;
+    if (pexelsDebounceRef.current) clearTimeout(pexelsDebounceRef.current);
+    pexelsDebounceRef.current = setTimeout(() => {
+      searchPexels(pexelsQuery, pexelsOrientation, pexelsMediaType);
+    }, 600);
+    return () => { if (pexelsDebounceRef.current) clearTimeout(pexelsDebounceRef.current); };
+  }, [pexelsQuery, pexelsOrientation, pexelsMediaType, activeTab, searchPexels]);
+
+  const handleDownloadPexels = async (photo: PexelsPhoto) => {
+    if (!currentProjectPath) return;
+    setPexelsDownloading(prev => ({ ...prev, [photo.id]: true }));
+    setPexelsProgress(prev => ({ ...prev, [photo.id]: 5 }));
+
+    const interval = setInterval(() => {
+      setPexelsProgress(prev => {
+        const cur = prev[photo.id] ?? 5;
+        if (cur >= 85) { clearInterval(interval); return prev; }
+        return { ...prev, [photo.id]: cur + Math.random() * 8 };
+      });
+    }, 200);
+
+    try {
+      await invoke('download_pexels', {
+        photoId: photo.id,
+        photoUrl: photo.src.large2x || photo.src.large,
+        alt: photo.alt,
+        projectPath: currentProjectPath,
+      });
+      clearInterval(interval);
+      setPexelsProgress(prev => ({ ...prev, [photo.id]: 100 }));
+      setPexelsDownloaded(prev => ({ ...prev, [photo.id]: true }));
+      loadAssets();
+    } catch (err) {
+      clearInterval(interval);
+      console.error('Pexels download error', err);
+      setPexelsProgress(prev => ({ ...prev, [photo.id]: 0 }));
+    } finally {
+      setPexelsDownloading(prev => ({ ...prev, [photo.id]: false }));
+    }
+  };
+
+  const handleDownloadPexelsVideo = async (video: PexelsVideo) => {
+    if (!currentProjectPath) return;
+    // Pick best quality available: hd > sd, skipping entries with null link (e.g. hls manifests)
+    const validFiles = video.video_files.filter(f => f.link != null && f.quality !== 'hls');
+    const file = validFiles.find(f => f.quality === 'hd') ||
+                 validFiles.find(f => f.quality === 'sd') ||
+                 validFiles[0];
+    if (!file || !file.link) return;
+
+    setPexelsDownloading(prev => ({ ...prev, [video.id]: true }));
+    setPexelsProgress(prev => ({ ...prev, [video.id]: 5 }));
+
+    const interval = setInterval(() => {
+      setPexelsProgress(prev => {
+        const cur = prev[video.id] ?? 5;
+        if (cur >= 85) { clearInterval(interval); return prev; }
+        return { ...prev, [video.id]: cur + Math.random() * 6 };
+      });
+    }, 300);
+
+    try {
+      await invoke('download_pexels_video', {
+        videoId: video.id,
+        videoUrl: file.link,
+        author: video.user.name,
+        projectPath: currentProjectPath,
+      });
+      clearInterval(interval);
+      setPexelsProgress(prev => ({ ...prev, [video.id]: 100 }));
+      setPexelsDownloaded(prev => ({ ...prev, [video.id]: true }));
+      loadAssets();
+    } catch (err) {
+      clearInterval(interval);
+      console.error('Pexels video download error', err);
+      setPexelsProgress(prev => ({ ...prev, [video.id]: 0 }));
+    } finally {
+      setPexelsDownloading(prev => ({ ...prev, [video.id]: false }));
     }
   };
 
@@ -438,10 +694,14 @@ export const ItensAside = ({
     }
   }, [activeTab]);
 
-  const handleDownloadFont = async (fontFile: string) => {
+  const handleDownloadFont = async (font: any) => {
+
+
+    let fontFile = font.file
+
     const settingsFolder = localStorage.getItem("wannacut_settings_folder");
     const destination = `${settingsFolder}/fonts/${fontFile}`;
-    const url = `https://wannacut.app/assets/fonts/${fontFile}`;
+    //const url = `https://wannacut.app/assets/fonts/${fontFile}`;
 
     // Lógica de download (Exemplo simplificado via Tauri)
     setDownloadProgress(prev => ({ ...prev, [fontFile]: 10 })); // Inicia barra
@@ -449,12 +709,13 @@ export const ItensAside = ({
     try {
       // Aqui você chamaria um comando Rust 'download_file' que criamos antes
       // ou usaria a API de HTTP do Tauri
-      await invoke('download_font_file', { url, path: destination });
+      await invoke('download_font_file', { id: font.id , path: destination, settingsFolder:settingsFolder });
       
       setDownloadProgress(prev => ({ ...prev, [fontFile]: 100 }));
       loadSystemFonts(); // Recarrega a lista do Rust para validar que o arquivo existe
     } catch (error) {
       console.error("Download failed", error);
+      showNotify(error, "error");
       setDownloadProgress(prev => ({ ...prev, [fontFile]: 0 }));
     }
   };
@@ -1108,6 +1369,452 @@ export const ItensAside = ({
 
 
 
+        {/* ══════════════════ IMAGE LIBRARY (PEXELS) ══════════════════ */}
+        {activeTab === 'Images' && (
+          <>
+            <aside className="relative border-r border-zinc-800 bg-[#0c0c0c] flex flex-col h-full w-full">
+              {/* Header */}
+              <div className="p-4 border-b border-zinc-900 flex-shrink-0 flex items-center justify-between">
+                <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                  Image Library
+                </h2>
+
+                {/* 3-dot menu */}
+                <div className="relative" ref={pexelsKeyMenuRef}>
+                  <button
+                    onClick={() => setShowPexelsKeyMenu(v => !v)}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all"
+                    title="Opções"
+                  >
+                    <MoreVertical size={14} />
+                  </button>
+
+                  <AnimatePresence>
+                    {showPexelsKeyMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                        transition={{ duration: 0.1 }}
+                        className="absolute right-0 top-9 z-50 w-52 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden"
+                      >
+                        <button
+                          onClick={() => {
+                            setPexelsKeyModalInput(pexelsApiKey ?? '');
+                            setShowPexelsKeyModal(true);
+                            setShowPexelsKeyMenu(false);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-[11px] text-zinc-300 hover:bg-white/5 transition-colors"
+                        >
+                          <Key size={13} className="text-sky-400 flex-shrink-0" />
+                          <span>{pexelsApiKey ? 'Trocar API Key' : 'Inserir API Key'}</span>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {/* Modal de chave Pexels */}
+              <AnimatePresence>
+                {showPexelsKeyModal && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6"
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowPexelsKeyModal(false); }}
+                  >
+                    <motion.div
+                      initial={{ scale: 0.95, y: 8 }}
+                      animate={{ scale: 1, y: 0 }}
+                      exit={{ scale: 0.95, y: 8 }}
+                      className="w-full bg-zinc-900 border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col gap-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-sky-600/20 flex items-center justify-center">
+                          <Key size={15} className="text-sky-400" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black text-zinc-200 uppercase tracking-widest">API Key Pexels</p>
+                          <p className="text-[9px] text-zinc-600 uppercase tracking-wider">Sua chave pessoal e gratuita</p>
+                        </div>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={pexelsKeyModalInput}
+                        onChange={e => setPexelsKeyModalInput(e.target.value)}
+                        placeholder="Cole sua API Key aqui..."
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-[11px] text-zinc-200 placeholder:text-zinc-700 focus:outline-none focus:border-sky-500/40 transition-all font-mono"
+                        onKeyDown={e => { if (e.key === 'Enter') handleSavePexelsApiKey(); }}
+                        autoFocus
+                      />
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowPexelsKeyModal(false)}
+                          className="flex-1 h-9 rounded-xl border border-white/10 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-all uppercase tracking-widest"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSavePexelsApiKey}
+                          disabled={pexelsKeySaving || !pexelsKeyModalInput.trim()}
+                          className="flex-1 h-9 rounded-xl bg-sky-600/20 border border-sky-500/30 text-[10px] font-black text-sky-300 hover:bg-sky-600/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+                        >
+                          {pexelsKeySaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                          Save
+                        </button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Loading da chave */}
+              {pexelsApiKeyLoading && (
+                <div className="flex-1 flex items-center justify-center">
+                  <Loader2 size={20} className="text-sky-500 animate-spin" />
+                </div>
+              )}
+
+              {/* Tela: sem API key configurada */}
+              {!pexelsApiKeyLoading && !pexelsApiKey && (
+                <div className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5">
+                  <div className="flex flex-col items-center gap-3 pt-6 pb-2 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-sky-600/10 border border-sky-500/20 flex items-center justify-center">
+                      <Key size={22} className="text-sky-400" />
+                    </div>
+                    <div>
+                      <p className="text-[12px] font-black text-zinc-200 uppercase tracking-widest mb-1">Pexels API Key</p>
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest leading-relaxed">
+                        You need a free key<br/>to search for images
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Guia rápido */}
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { step: '1', text: 'Create a free account at pexels.com' },
+                      { step: '2', text: 'Go to: pexels.com/api' },
+                      { step: '3', text: 'Click "Your API Key" and create a new key' },
+                      { step: '4', text: 'Give the app a name (e.g. "WannaCut")' },
+                      { step: '5', text: 'Copy the generated API Key' },
+                      { step: '6', text: 'Paste it here using the button below' },
+                    ].map(({ step, text }) => (
+                      <div key={step} className="flex items-start gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600/20 text-sky-400 text-[9px] font-black flex items-center justify-center mt-0.5">{step}</span>
+                        <p className="text-[10px] text-zinc-400 leading-relaxed">{text}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <a
+                    href="https://www.pexels.com/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 h-9 rounded-xl bg-white/[0.03] border border-white/10 text-[10px] font-bold text-zinc-400 hover:text-zinc-200 hover:border-white/20 transition-all uppercase tracking-widest"
+                  >
+                    <ExternalLink size={11} />
+                    Open pexels.com/api
+                  </a>
+
+                  <button
+                    onClick={() => { setPexelsKeyModalInput(''); setShowPexelsKeyModal(true); }}
+                    className="flex items-center justify-center gap-2 h-10 rounded-xl bg-sky-600/20 border border-sky-500/30 text-[10px] font-black text-sky-300 hover:bg-sky-600/30 transition-all uppercase tracking-widest"
+                  >
+                    <Key size={12} />
+                    Enter my API Key
+                  </button>
+                </div>
+              )}
+
+              {/* Conteúdo normal quando há chave */}
+              {!pexelsApiKeyLoading && pexelsApiKey && (
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-4">
+
+                  {/* Search Bar */}
+                  <div className="relative group flex-shrink-0">
+                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                      {pexelsLoading
+                        ? <Loader2 size={14} className="text-sky-400 animate-spin" />
+                        : <Search size={14} className={`transition-colors ${pexelsQuery ? 'text-sky-400' : 'text-zinc-500 group-focus-within:text-sky-400'}`} />
+                      }
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search images and videos..."
+                      value={pexelsQuery}
+                      onChange={e => setPexelsQuery(e.target.value)}
+                      className="h-9 w-full bg-[#161616]/50 backdrop-blur-xl border border-white/5 rounded-2xl py-3 pl-10 pr-10 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-sky-600/30 focus:bg-[#1a1a1a] transition-all duration-300"
+                    />
+                    <AnimatePresence>
+                      {pexelsQuery && (
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          onClick={() => { setPexelsQuery(''); setPexelsResults([]); }}
+                          className="absolute inset-y-0 right-3 flex items-center text-zinc-500 hover:text-white transition-colors"
+                        >
+                          <X size={13} />
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Media type filter */}
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    {(
+                      [
+                        { id: 'image', label: 'Image' },
+                        { id: 'video', label: 'Video' },
+                        { id: 'both',  label: 'Both'  },
+                      ] as { id: PexelsMediaType; label: string }[]
+                    ).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => setPexelsMediaType(id)}
+                        className={`flex-1 h-7 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all duration-200
+                          ${pexelsMediaType === id
+                            ? 'bg-sky-600/20 border-sky-500/60 text-sky-300'
+                            : 'bg-white/[0.03] border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Orientation filter */}
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    {(
+                      [
+                        { id: 'landscape', label: 'Wide' },
+                        { id: 'portrait',  label: 'Portrait' },
+                        { id: 'square',    label: 'Square' },
+                        { id: 'all',       label: 'All' },
+                      ] as { id: PexelsOrientation; label: string }[]
+                    ).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => setPexelsOrientation(id)}
+                        className={`flex-1 h-7 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all duration-200
+                          ${pexelsOrientation === id
+                            ? 'bg-sky-600/20 border-sky-500/60 text-sky-300'
+                            : 'bg-white/[0.03] border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Results grid */}
+                  {!pexelsQuery.trim() && !pexelsLoading && (
+                    <div className="py-16 flex flex-col items-center gap-3 text-center">
+                      <ScanSearch size={28} className="text-zinc-800" />
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold">
+                        Search for royalty-free images
+                      </p>
+                      <p className="text-[9px] text-zinc-700 uppercase tracking-widest">
+                        Powered by Pexels
+                      </p>
+                    </div>
+                  )}
+
+                  {pexelsLoading && (
+                    <div className="py-16 flex flex-col items-center gap-3">
+                      <Loader2 size={22} className="text-sky-500 animate-spin" />
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Searching...</p>
+                    </div>
+                  )}
+
+                  {!pexelsLoading && pexelsQuery.trim() && pexelsResults.length === 0 && (
+                    <div className="py-16 flex flex-col items-center gap-3">
+                      <Search size={22} className="text-zinc-800" />
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">No results found</p>
+                    </div>
+                  )}
+
+                  {!pexelsLoading && pexelsResults.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {pexelsResults.map(item => {
+                        const id      = item.data.id;
+                        const isDown  = pexelsDownloading[id];
+                        const isDone  = pexelsDownloaded[id];
+                        const prog    = pexelsProgress[id] ?? 0;
+
+                        if (item.kind === 'photo') {
+                          const photo = item.data;
+                          return (
+                            <motion.div
+                              key={`photo-${id}`}
+                              initial={{ opacity: 0, scale: 0.96 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              className="group relative aspect-video rounded-xl overflow-hidden border border-white/5 hover:border-sky-500/30 transition-all"
+                            >
+                              <img
+                                src={photo.src.medium}
+                                alt={photo.alt}
+                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                loading="lazy"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <div className="absolute bottom-1.5 left-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <p className="text-[8px] text-zinc-300 truncate">{photo.photographer}</p>
+                              </div>
+                              <button
+                                onClick={() => !isDown && !isDone && handleDownloadPexels(photo)}
+                                disabled={isDown || isDone}
+                                className={`absolute top-1.5 right-1.5 w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
+                                  ${isDone ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                                  : isDown ? 'bg-sky-600/10 text-sky-400 cursor-not-allowed border border-sky-500/20'
+                                  : 'bg-black/60 text-zinc-300 hover:bg-sky-600/20 hover:text-sky-300 border border-white/10 backdrop-blur-sm'}`}
+                              >
+                                {isDone ? <Check size={11} /> : isDown ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                              </button>
+                              {prog > 0 && (
+                                <div className="absolute bottom-0 left-0 w-full h-[3px] bg-zinc-950">
+                                  <motion.div
+                                    animate={{ width: `${prog}%` }}
+                                    transition={{ ease: 'easeOut', duration: 0.25 }}
+                                    className={`h-full rounded-full ${isDone ? 'bg-emerald-500 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-sky-500 shadow-[0_0_6px_rgba(56,189,248,0.5)]'}`}
+                                  />
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        }
+
+                        // ── Video card ────────────────────────────────
+                        const video = item.data as PexelsVideo;
+                        const validVideoFiles = video.video_files.filter(f => f.link != null && f.quality !== 'hls');
+                        // For preview prefer smallest SD to load fast, fallback to HD
+                        const previewFile = validVideoFiles.find(f => f.quality === 'sd') ||
+                                            validVideoFiles.find(f => f.quality === 'hd') ||
+                                            validVideoFiles[0];
+                        const previewLink = previewFile?.link ?? null;
+                        const thumbnail = video.video_pictures[0]?.picture || video.image || '';
+                        const duration  = video.duration;
+                        const mins = Math.floor(duration / 60);
+                        const secs = duration % 60;
+                        const durationStr = `${mins}:${String(secs).padStart(2, '0')}`;
+
+                        console.log('preview ',previewLink)
+
+                        return (
+                          <motion.div
+                            key={`video-${id}`}
+                            initial={{ opacity: 0, scale: 0.96 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="group relative aspect-video rounded-xl overflow-hidden border border-white/5 hover:border-sky-500/30 transition-all"
+                          >
+                            {/* Thumbnail shown while idle */}
+                            {thumbnail && (
+                              <img
+                                src={thumbnail}
+                                alt={video.user.name}
+                                className="absolute inset-0 w-full h-full object-cover group-hover:opacity-0 transition-opacity duration-300"
+                                loading="lazy"
+                              />
+                            )}
+
+                            {/* Video preview on hover */}
+                            {previewLink && (
+                              <video
+                                src={previewLink}
+                                className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                                muted
+                                loop
+                                playsInline
+                                preload="none"
+                                onMouseEnter={e => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
+                                onMouseLeave={e => {
+                                  const v = e.currentTarget as HTMLVideoElement;
+                                  v.pause();
+                                  v.currentTime = 0;
+                                }}
+                              />
+                            )}
+
+                            
+                            {/* Overlay */}
+                            {/*<div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" /> */}
+
+                            
+                            {/* Video badge */}
+                            <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded-md border border-white/10">
+                              <Film size={8} className="text-sky-400" />
+                              <span className="text-[8px] text-zinc-300 font-mono">{durationStr}</span>
+                            </div>
+
+                            {/* Author */}
+                            <div className="absolute bottom-1.5 left-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <p className="text-[8px] text-zinc-300 truncate">{video.user.name}</p>
+                            </div>
+
+                            {/* Download */}
+                            <button
+                              onClick={() => !isDown && !isDone && handleDownloadPexelsVideo(video)}
+                              disabled={isDown || isDone}
+                              className={`absolute top-1.5 right-1.5 w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
+                                ${isDone ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                                : isDown ? 'bg-sky-600/10 text-sky-400 cursor-not-allowed border border-sky-500/20'
+                                : 'bg-black/60 text-zinc-300 hover:bg-sky-600/20 hover:text-sky-300 border border-white/10 backdrop-blur-sm'}`}
+                            >
+                              {isDone ? <Check size={11} /> : isDown ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                            </button>
+
+                            {/* Progress bar */}
+                            {prog > 0 && (
+                              <div className="absolute bottom-0 left-0 w-full h-[3px] bg-zinc-950">
+                                <motion.div
+                                  animate={{ width: `${prog}%` }}
+                                  transition={{ ease: 'easeOut', duration: 0.25 }}
+                                  className={`h-full rounded-full ${isDone ? 'bg-emerald-500 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-sky-500 shadow-[0_0_6px_rgba(56,189,248,0.5)]'}`}
+                                />
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Pexels attribution (obrigatório pelos ToS) */}
+                  {pexelsResults.length > 0 && (
+                    <div className="flex items-center justify-center gap-2 py-2 flex-shrink-0">
+                      <p className="text-[8px] text-zinc-700 uppercase tracking-widest">Photos provided by</p>
+                      <a
+                        href="https://www.pexels.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[8px] text-zinc-500 hover:text-zinc-300 uppercase tracking-widest font-bold transition-colors"
+                      >
+                        Pexels
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Resize handle */}
+              <div
+                onMouseDown={() => {
+                  isResizingSidebar.current = true;
+                  document.body.style.cursor = 'col-resize';
+                }}
+                className="absolute top-0 right-0 w-1 h-full cursor-col-resize z-[60] hover:bg-sky-500/50 transition-colors group"
+              >
+                <div className="absolute top-1/2 right-0 w-[2px] h-8 bg-zinc-800 group-hover:bg-sky-500 rounded-full -translate-y-1/2 transition-colors" />
+              </div>
+            </aside>
+          </>
+        )}
+
         {/* Seção de Texto/Fontes no ItensAside.tsx */}
         {(activeTab === 'Text') && (
           <div className="grid grid-cols-1 gap-2">
@@ -1170,15 +1877,27 @@ export const ItensAside = ({
                           <span className="text-[7px] text-zinc-700 uppercase font-bold tracking-tighter">{font.plan} </span>
                         </div>
                         
-                        {
-                          font.plan == 'free' &&
-                            <button 
-                            onClick={() => handleDownloadFont(font.file)}
-                            className="hover:text-cyan-400 transition-all text-zinc-600"
-                          >
+                        
+
+
+                        {(license?.plan === font.plan || font.plan == 'free') && (
+                          <button onClick={() => handleDownloadFont(font)}>
                             <Download size={12} />
                           </button>
-                        }
+                        )}
+
+
+                        {(license?.plan === 'ultimate' && font.plan == 'pro') && (
+                          <button onClick={() => handleDownloadFont(font)}>
+                            <Download size={12} />
+                          </button>
+                        )}
+
+ 
+
+
+
+
                       </div>
 
                       {/* Barra de Progresso no Fundo */}

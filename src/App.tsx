@@ -205,9 +205,22 @@ interface ProjectFileData {
   assets: Asset[];
   clips: Clip[];
   tracks: Tracks[];
+  timelineTransitions?: TimelineTransition[];
   lastModified: number;
   copyOf?: string; // Pointer to another main{timestamp}.project file
   
+}
+
+// Transição entre dois clips na timeline (diferente de clip.transitions que era por clip)
+interface TimelineTransition {
+  id: string;
+  name: string;       // e.g. 'fade', 'wipe', etc.
+  trackId: number;
+  junctionTime: number;  // ponto exato da junção (em segundos)
+  durationLeft: number;  // quanto a transição se estende para a ESQUERDA (sobre o clip anterior)
+  durationRight: number; // quanto a transição se estende para a DIREITA (sobre o clip seguinte)
+  clipLeftId: string;
+  clipRightId: string;
 }
 
 interface Asset {
@@ -436,11 +449,6 @@ export default function App() {
 
 
 
- 
-
-
-
-
 
   useEffect(() => {
     // 1. Filtra os projetos que estão com status 'success' neste ciclo
@@ -512,6 +520,8 @@ const activateLicense = async () => {
 //PART TO COPY AND PASTE EFFECTS
 
 const [copiedEffects, setcopiedEffects ] = useState<any>({});
+const [timelineTransitions, setTimelineTransitions] = useState<TimelineTransition[]>([]);
+const timelineTransitionsRef = useRef<TimelineTransition[]>([]);
 
 const pasteEffects = (target_clip:Clip) => 
 {
@@ -1123,6 +1133,7 @@ const handleSaveSettings = async (newSettings: ProjectSettings) => {
 
   //States for Box Selection, make a box with mouse to select severals clips
   const [isBoxSelecting, setIsBoxSelecting] = useState(false);
+  const [isDraggingTransition, setIsDraggingTransition] = useState(false);
   const [boxStart, setBoxStart] = useState({ x: 0, y: 0 });
   const [boxEnd, setBoxEnd] = useState({ x: 0, y: 0 });
 
@@ -2750,13 +2761,14 @@ const MAX_HISTORY_STEPS = 100;
 
   useEffect(() => {
   // Keep ref in sync so closures (e.g. handleNativeDrop) always read the latest value
-  //pixelsPerSecondRef.current = pixelsPerSecond;
+  pixelsPerSecondRef.current = pixelsPerSecond;
+  timelineTransitionsRef.current = timelineTransitions;
 
   // Whenever the zoom changes, we visually reposition the needle.
   if (playheadRef.current) {
-    const currentPos = currentTimeRef.current * pixelsPerSecondRef.current;
+    const currentPos = currentTimeRef.current * pixelsPerSecond;
     playheadRef.current.style.transform = `translateX(${currentPos}px)`;
-    timelineContainerRef.current.scrollLeft= currentPos - asidetrackwidth
+    timelineContainerRef.current.scrollLeft= currentPos
   }
 }, [pixelsPerSecond]);
 
@@ -3279,6 +3291,7 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
     document.addEventListener('mouseup', onMouseUp);
   };
 
+  const trackContentRef = useRef<HTMLDivElement>(null);
 
   // Effect to handle automatic saving whenever project data changes
   useEffect(() => {
@@ -3301,6 +3314,7 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
         assets,
         clips,
         tracks,
+        timelineTransitions,
         lastModified: Date.now()
       };
 
@@ -3331,7 +3345,7 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
 
     const timeoutId = setTimeout(saveProject, 500); // 0.5 second debounce
     return () => clearTimeout(timeoutId);
-  }, [clips, assets, projectName, isProjectLoaded]);  
+  }, [clips, assets, projectName, isProjectLoaded, timelineTransitions]);  
 
   //Formating pos lable for min and segs
 
@@ -3877,49 +3891,9 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
 
 
 
-const handleDropOnClip_old = (e: React.DragEvent, targetClipId: string) => {
-  e.preventDefault();
-  
-  // 1. Tentar obter dados de Efeito ou Transição
-  const effectDataRaw = e.dataTransfer.getData('application/wannacut-effect');
-  const transitionDataRaw = e.dataTransfer.getData('application/wannacut-transition');
 
-  if (!effectDataRaw && !transitionDataRaw) return;
 
-  setClips(prevClips => prevClips.map(clip => {
-    if (clip.id !== targetClipId) return clip;
 
-    const updatedClip = { ...clip };
-
-    // Se for EFEITO
-    if (effectDataRaw) {
-      const data = JSON.parse(effectDataRaw);
-      if (!updatedClip.effects) updatedClip.effects = [];
-      
-      // Adiciona o novo efeito ao array
-      updatedClip.effects.push({
-        id: crypto.randomUUID(),
-        name: data.effectId,
-        category: data.category,
-        addedAt: Date.now() // útil para chaves únicas
-      });
-    }
-
-    // Se for TRANSIÇÃO
-    if (transitionDataRaw) {
-      const data = JSON.parse(transitionDataRaw);
-      if (!updatedClip.transitions) updatedClip.transitions = [];
-      
-      updatedClip.transitions.push({
-        id: crypto.randomUUID(),
-        name: data.transitionId,
-        duration: data.duration || 0.5
-      });
-    }
-
-    return updatedClip;
-  }));
-};
 
 
 const handleDragStartEffect = (
@@ -3936,6 +3910,9 @@ const handleDragStartEffect = (
   e.dataTransfer.setData('application/wannacut-effect', JSON.stringify(effectData));
   
   e.dataTransfer.dropEffect = 'copy';
+
+  console.log('transitions effects', e)
+
   
   //console.log(`Dragging effect: ${effectId} (${category})`);
 };
@@ -3952,16 +3929,20 @@ const handleDragStartTransition = (
 
   e.dataTransfer.setData('application/wannacut-transition', JSON.stringify(transitionData));
   e.dataTransfer.dropEffect = 'link';
-  //console.log(`Dragging transition: ${transitionId}`);
+
+  //e.dataTransfer.effectAllowed = 'copyMove';
+
+
+  console.log('transitions transfer', e)
+  
 };
 
 
     const handleDragOver = (e: React.DragEvent) => {
       e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "copy";
-
-      
+      //e.stopPropagation();
+      const isTransition = e.dataTransfer.types.includes('application/wannacut-transition');
+      e.dataTransfer.dropEffect = isTransition ? 'link' : 'copy';
     };
 
 //Play and Pause of Player Source Auxiliar
@@ -4673,6 +4654,59 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
   
   // FADE HANDLE ENGINE
 
+// ── TIMELINE TRANSITION RESIZE ENGINE ────────────────────────────────────────
+const startResizingTransition = (
+  e: React.MouseEvent,
+  transitionId: string,
+  side: 'left' | 'right'
+) => {
+  e.stopPropagation();
+  e.preventDefault();
+
+  const startX = e.clientX;
+  const transition = timelineTransitionsRef.current.find(t => t.id === transitionId);
+  if (!transition) return;
+
+  const initialLeft = transition.durationLeft;
+  const initialRight = transition.durationRight;
+
+  // Buscar clips para calcular limites (50% do clip vizinho)
+  const clipLeft = clips.find(c => c.id === transition.clipLeftId);
+  const clipRight = clips.find(c => c.id === transition.clipRightId);
+
+  const maxLeft = clipLeft ? clipLeft.duration * 0.5 : 10;
+  const maxRight = clipRight ? clipRight.duration * 0.5 : 10;
+
+  console.log('max: ',maxLeft, maxRight, side)
+
+  const onMouseMove = (ev: MouseEvent) => {
+    const dx = (ev.clientX - startX) / pixelsPerSecondRef.current;
+
+    setTimelineTransitions(prev =>
+      prev.map(t => {
+        if (t.id !== transitionId) return t;
+        if (side === 'left') {
+          // Arrastar handle esquerdo: aumentar/diminuir durationLeft
+          const newLeft = Math.max(0.05, Math.min(maxLeft, initialLeft - dx));
+          return { ...t, durationLeft: newLeft };
+        } else {
+          // Arrastar handle direito: aumentar/diminuir durationRight
+          const newRight = Math.max(0.05, Math.min(maxRight, initialRight + dx));
+          return { ...t, durationRight: newRight };
+        }
+      })
+    );
+  };
+
+  const onMouseUp = () => {
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  };
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 const handleFadeDrag = (e: React.MouseEvent, clipId: string, type: 'in' | 'out', clip_type: string) => {
     e.stopPropagation();
@@ -4866,6 +4900,7 @@ const openProjectEarly = async (parsed: JSON) => {
     setClips(parsed.clips || []);
     setAssets(parsed.assets || []);
     setTracks(parsed.tracks || []);
+    setTimelineTransitions(parsed.timelineTransitions || []);
     
  
     
@@ -4913,6 +4948,7 @@ const openProject = async (path: string) => {
     setClips(parsed.clips || []);
     setAssets(parsed.assets || []);
     setTracks(parsed.tracks || []);
+    setTimelineTransitions(parsed.timelineTransitions || []);
     //setProjectName(parsed.projectName || "Unnamed Project");
 
  
@@ -5138,11 +5174,94 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
   e.preventDefault();
   e.stopPropagation();
 
-
- 
+  console.log('chamou drop time')
 
   const targetTrack = tracks.find(t => t.id === trackId);
   if (targetTrack?.lock === true) return;
+
+  // ── TRANSITION DROP ──────────────────────────────────────────────────────────
+  let transitionDataRaw = e.dataTransfer.getData('application/wannacut-transition');
+  console.log('[transition]', e.dataTransfer,  transitionDataRaw)
+  if (transitionDataRaw) {
+    try {
+      const data = JSON.parse(transitionDataRaw);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const dropTime = (e.clientX - rect.left) / pixelsPerSecond;
+
+      // Clips nessa track ordenados por start
+      const trackClips = clips
+        .filter(c => Number(c.trackId) === Number(trackId))
+        .sort((a, b) => a.start - b.start);
+
+      const MAX_JUNCTION_GAP = 0.4; // 400 ms
+
+      // Achar par de clips onde dropTime está próximo da junção (end do A / start do B)
+      let foundLeft: Clip | null = null;
+      let foundRight: Clip | null = null;
+      let junctionTime = 0;
+
+      for (let i = 0; i < trackClips.length - 1; i++) {
+        const clipA = trackClips[i];
+        const clipB = trackClips[i + 1];
+        const endA = clipA.start + clipA.duration;
+        const startB = clipB.start;
+        const gap = startB - endA;
+
+        if (gap > MAX_JUNCTION_GAP) continue;
+
+        console.log('[transition] passou')
+
+        // Ponto central da junção
+        const junction = (endA + startB) / 2;
+        const halfWindow = Math.max(clipA.duration, clipB.duration) * 0.5 + MAX_JUNCTION_GAP;
+
+        if (Math.abs(dropTime - junction) <= halfWindow) {
+          foundLeft = clipA;
+          foundRight = clipB;
+          junctionTime = endA; // usar o fim do clip esquerdo como ponto de referência
+          console.log('variaveis pra trasition', endA, junction)
+          break;
+        }
+
+
+      }
+
+
+      if (!foundLeft || !foundRight) {
+        setNotification({ message: 'Drop transition between two adjacent clips (max 400ms gap)', type: 'error' }); setTimeout(() => setNotification(null), 3000);
+        return;
+      }
+
+      // Duração padrão: 0.5s para cada lado, limitada a 50% do clip vizinho
+      const defaultHalf = Math.min(0.5, foundLeft.duration * 0.5, foundRight.duration * 0.5);
+
+      // Remover transição existente nessa mesma junção, se houver
+      const newTransition: TimelineTransition = {
+        id: crypto.randomUUID(),
+        name: data.transitionId,
+        trackId,
+        junctionTime,
+        durationLeft: defaultHalf,
+        durationRight: defaultHalf,
+        clipLeftId: foundLeft.id,
+        clipRightId: foundRight.id,
+      };
+
+      setTimelineTransitions(prev => {
+        // Substituir transição existente na mesma junção
+        const filtered = prev.filter(
+          t => !(t.trackId === trackId && Math.abs(t.junctionTime - junctionTime) < 0.05)
+        );
+        return [...filtered, newTransition];
+      });
+
+      setNotification({ message: `Transition "${data.transitionId}" added`, type: 'success' }); setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error('Error processing transition drop:', err);
+    }
+    return;
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 
   const isTimelineClip = e.dataTransfer.getData("isTimelineClip") === "true";
   const anchorStart = parseFloat(e.dataTransfer.getData("anchorStart") || "0");
@@ -6308,6 +6427,7 @@ return (
             currentProjectPath = {currentProjectPath}
             loadAssets={loadAssets}
             settingsFolder = {settingsFolder}
+            showNotify={showNotify}
           />
 
 <div id="twopreview" className="flex-1 flex overflow-hidden min-h-0 bg-[#050505]">
@@ -6929,7 +7049,7 @@ return (
      
 
      {/* Header da Timeline / Ruler */}
-  <div className="flex bg-zinc-900/50" style = {{width: (totalDuration + 600) * pixelsPerSecond }}>
+  <div className="flex bg-zinc-900/50" style = {{width: 300 * pixelsPerSecond }}>
     <div className="w-50 shrink-0 border-r border-white/5" /> 
     
     <div 
@@ -7069,7 +7189,7 @@ return (
         {/* DROPS AREA: Where is the Clips stay */}
         <div 
           onDragOver={handleDragOver}
-          onDrop={(e) => handleDropOnTimeline(e, track.id)}
+          onDrop={(e) => { handleDropOnTimeline(e, track.id)}}
           onContextMenu={(e) => {
             // Só abre se clicou em área vazia (não em cima de um clip)
             const target = e.target as HTMLElement;
@@ -7096,9 +7216,11 @@ return (
             'text-slate-500 opacity-40 hover:opacity-60 transition-opacity'
           }
 
-          ${track.mute 
-          ? 'bg-rose-950/30 border-rose-500/40' // Fundo vinho sutil e borda rosa
-          : 'bg-zinc-900/10 border-zinc-800/20 hover:bg-zinc-900/20'
+          ${isDraggingTransition
+            ? 'border-blue-500/40 bg-blue-900/10'
+            : track.mute 
+              ? 'bg-rose-950/30 border-rose-500/40'
+              : 'bg-zinc-900/10 border-zinc-800/20 hover:bg-zinc-900/20'
           }`
         
         
@@ -7220,22 +7342,33 @@ return (
               key={clip.id} layoutId={clip.id}
               onDragOver={(e) => {
                 e.preventDefault(); // Crítico: permite o drop
-                e.dataTransfer.dropEffect = 'copy';
+                e.stopPropagation();
+                console.log('dragover')
+                //const isTransition = e.dataTransfer.types.includes('application/wannacut-transition');
+                //e.dataTransfer.dropEffect = isTransition ? 'link' : 'copy';
+
+               
               }}
               onDrop={(e) => {
-                const isEffect = e.dataTransfer.types.includes('application/wannacut-effect');
-                const isTransition = e.dataTransfer.types.includes('application/wannacut-transition');
+                e.preventDefault();
+                e.stopPropagation(); // Importante para não propagar para a timeline pai
 
-                if (isEffect || isTransition) {
-                  e.stopPropagation(); 
-                  
+                // Em vez de olhar os types, tente ler o conteúdo diretamente
+                const transitionData = e.dataTransfer.getData('application/wannacut-transition');
+                const effectData = e.dataTransfer.getData('application/wannacut-effect');
+
+                console.log('Drop detectado!', { transitionData, effectData });
+
+                if (transitionData) {
+                  handleDropOnTimeline(e, clip.trackId);
+                } else if (effectData) {
                   handleDropOnClip(e, clip.id);
                 }
-
-
-                
-                
               }}
+
+                
+                
+              
               draggable="true"
               onContextMenu={(e) => handleContextMenu(e, assetTarget?.type, clip)}
               onDragStart={(e) => handleDragStart(e, clip.color, track.id, clip.duration, clip.name, true, clip.id)}
@@ -7827,6 +7960,14 @@ return (
               <div className="absolute left-0 inset-y-0 w-1.5 cursor-ew-resize hover:bg-white/40 z-10" onMouseDown={(e) => startResizing(e, clip.id, 'left')} />
               <div className="absolute right-0 inset-y-0 w-1.5 cursor-ew-resize hover:bg-white/40 z-10" onMouseDown={(e) => startResizing(e, clip.id, 'right')} />
 
+              {/* Indicadores de junção (aparecem ao arrastar uma transição) */}
+              {isDraggingTransition && (
+                <>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-blue-400/70 shadow-[0_0_8px_rgba(96,165,250,0.8)] pointer-events-none z-[65] animate-pulse" />
+                  <div className="absolute right-0 top-0 bottom-0 w-[3px] bg-blue-400/70 shadow-[0_0_8px_rgba(96,165,250,0.8)] pointer-events-none z-[65] animate-pulse" />
+                </>
+              )}
+
 
               {/* --- VISUAL PRO LAYERS (EFEITOS) --- */}
               {clip.effects && clip.effects.length > 0 && (
@@ -7846,15 +7987,7 @@ return (
               )}
 
               {/* --- VISUAL PRO LAYERS (TRANSIÇÕES) --- */}
-              {clip.transitions && clip.transitions.length > 0 && (
-                <>
-                  {/* Se tiver transição na entrada, uma barrinha azul na esquerda */}
-                  {clip.transitions.some(t => t.type === 'in' || !t.type) && (
-                    <div className="absolute left-0 top-1/4 bottom-1/4 w-[3px] bg-blue-500 shadow-[2px_0_8px_rgba(59,130,246,0.6)] z-[60] rounded-r-full pointer-events-none" />
-                  )}
-                </>
-              )}
-
+              {/* As transições agora são renderizadas como overlays globais na timeline */}
 
 
 
@@ -7864,6 +7997,69 @@ return (
       </div>
     ))}
 
+
+      {/* ── TIMELINE TRANSITION OVERLAYS ──────────────────────────────────────── */}
+      {timelineTransitions.map(trans => {
+        const trackIndex = tracks.findIndex(t => t.id === trans.trackId);
+        if (trackIndex === -1) return null;
+
+
+        
+
+      // Na renderização do overlay, calcule o offset dinamicamente:
+
+
+        // linha 8002 — troca o +200 pelo valor real da ref
+        const calib = pixelsPerSecond > 40 ?  0.83 *pixelsPerSecond  : pixelsPerSecond
+
+        const left = ((trans.junctionTime - trans.durationLeft) * pixelsPerSecond) + 200 + calib
+        const width = (trans.durationLeft + trans.durationRight) * pixelsPerSecond;
+        const TRACK_HEIGHT = 64;
+        const TRACK_GAP = 4;
+        const RULER_H = 32;
+        const top = RULER_H + trackIndex * (TRACK_HEIGHT + TRACK_GAP) + 20;
+
+        return (
+          <div
+            key={trans.id}
+            className="absolute z-[55]"
+            style={{ top, left, width, height: TRACK_HEIGHT - 4 }}
+          >
+            <div className="absolute inset-0 rounded-md bg-blue-500/20 border border-blue-400/60 pointer-events-none" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 pointer-events-none select-none">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M1 7h12M8 3l4 4-4 4" stroke="#60a5fa" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="text-[8px] font-black text-blue-300 uppercase tracking-widest truncate max-w-full px-1">
+                {trans.name}
+              </span>
+            </div>
+            <div
+              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md bg-blue-400/40 hover:bg-blue-400/80 transition-colors"
+              onMouseDown={(e) => startResizingTransition(e, trans.id, 'left')}
+            >
+              <div className="absolute inset-y-0 left-0.5 w-[2px] bg-blue-300/80 rounded-full my-2" />
+            </div>
+            <div
+              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md bg-blue-400/40 hover:bg-blue-400/80 transition-colors"
+              onMouseDown={(e) => startResizingTransition(e, trans.id, 'right')}
+            >
+              <div className="absolute inset-y-0 right-0.5 w-[2px] bg-blue-300/80 rounded-full my-2" />
+            </div>
+            <button
+              className="absolute -top-2 -right-2 w-4 h-4 bg-zinc-900 border border-zinc-700 rounded-full text-zinc-400 hover:text-red-400 hover:border-red-500 flex items-center justify-center text-[10px] font-bold z-20 transition-colors leading-none"
+              onClick={(e) => {
+                e.stopPropagation();
+                setTimelineTransitions(prev => prev.filter(t => t.id !== trans.id));
+              }}
+              title="Remove transition"
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
+      {/* ────────────────────────────────────────────────────────────────────────── */}
 
        {isBoxSelecting && (
           <div 

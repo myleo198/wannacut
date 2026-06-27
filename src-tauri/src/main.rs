@@ -334,6 +334,309 @@ async fn download_freesound(
     Ok(file_name) // retorna o nome do arquivo para o frontend recarregar assets
 }
 
+// ══════════════════════════════════════════════════════════════
+// PEXELS IMAGE LIBRARY
+// ══════════════════════════════════════════════════════════════
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+struct PexelsPhotoSrc {
+    original: String,
+    large2x: String,
+    large: String,
+    medium: String,
+    small: String,
+    portrait: String,
+    landscape: String,
+    tiny: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+struct PexelsPhoto {
+    id: u64,
+    width: u32,
+    height: u32,
+    url: String,
+    photographer: String,
+    photographer_url: String,
+    alt: String,
+    src: PexelsPhotoSrc,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct PexelsSearchResponse {
+    photos: Vec<PexelsPhoto>,
+}
+
+/// Lê a chave da API do Pexels do arquivo wannacut_settings.json
+#[tauri::command]
+async fn read_pexels_api_key(settings_folder: String) -> Result<Option<String>, String> {
+    let settings_path = std::path::Path::new(&settings_folder).join("wannacut_settings.json");
+    if !settings_path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Erro ao ler wannacut_settings.json: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Erro ao parsear wannacut_settings.json: {}", e))?;
+    let key = json.get("pexels_api_key")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
+    Ok(key)
+}
+
+/// Salva a chave da API do Pexels no wannacut_settings.json (mesma estrutura do Freesound)
+#[tauri::command]
+async fn save_pexels_api_key(settings_folder: String, api_key: String) -> Result<(), String> {
+    let settings_path = std::path::Path::new(&settings_folder).join("wannacut_settings.json");
+
+    let mut json: serde_json::Value = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Erro ao ler wannacut_settings.json: {}", e))?;
+        serde_json::from_str(&content)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    json["pexels_api_key"] = serde_json::Value::String(api_key);
+
+    let serialized = serde_json::to_string_pretty(&json)
+        .map_err(|e| format!("Erro ao serializar settings: {}", e))?;
+    std::fs::write(&settings_path, serialized)
+        .map_err(|e| format!("Erro ao salvar wannacut_settings.json: {}", e))?;
+
+    Ok(())
+}
+
+// ── Pexels Video types ────────────────────────────────────────
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
+struct PexelsVideoFile {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    quality: Option<String>,
+    #[serde(default)]
+    file_type: Option<String>,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+    #[serde(default)]
+    fps: Option<f64>,
+    #[serde(default)]
+    link: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
+struct PexelsVideoPicture {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    picture: String,
+    #[serde(default)]
+    nr: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
+struct PexelsVideoUser {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    name: String,
+    // A API pode retornar null neste campo
+    #[serde(default)]
+    url: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+struct PexelsVideo {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    width: u32,
+    #[serde(default)]
+    height: u32,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    duration: u32,
+    #[serde(default)]
+    user: PexelsVideoUser,
+    #[serde(default)]
+    video_files: Vec<PexelsVideoFile>,
+    #[serde(default)]
+    video_pictures: Vec<PexelsVideoPicture>,
+    // Campos extras que a API manda e precisamos aceitar
+    #[serde(default)]
+    image: Option<String>,
+    #[serde(default)]
+    full_res: Option<serde_json::Value>,  // vem como null
+    #[serde(default)]
+    tags: Vec<serde_json::Value>,          // vem como []
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct PexelsVideoSearchResponse {
+    #[serde(default)]
+    videos: Vec<PexelsVideo>,
+}
+
+/// Busca imagens no Pexels
+#[tauri::command]
+async fn search_pexels(
+    query: String,
+    orientation: String, // "landscape" | "portrait" | "square" | "" (all)
+    api_key: String,
+) -> Result<Vec<PexelsPhoto>, String> {
+    let client = reqwest::Client::new();
+
+    let mut url = format!(
+        "https://api.pexels.com/v1/search?query={}&per_page=20",
+        urlencoding_simple(&query)
+    );
+    if !orientation.is_empty() && orientation != "all" {
+        url = format!("{}&orientation={}", url, orientation);
+    }
+
+    let response = client
+        .get(&url)
+        .header("Authorization", &api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Pexels request error: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(format!("Pexels API error: HTTP {}", status));
+    }
+
+    let data: PexelsSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Pexels JSON parse error: {}", e))?;
+
+    Ok(data.photos)
+}
+
+/// Busca vídeos no Pexels
+#[tauri::command]
+async fn search_pexels_videos(
+    query: String,
+    orientation: String, // "landscape" | "portrait" | "square" | ""
+    api_key: String,
+) -> Result<Vec<PexelsVideo>, String> {
+    let client = reqwest::Client::new();
+
+    let mut url = format!(
+        "https://api.pexels.com/videos/search?query={}&per_page=20",
+        urlencoding_simple(&query)
+    );
+    if !orientation.is_empty() && orientation != "all" {
+        url = format!("{}&orientation={}", url, orientation);
+    }
+
+    let response = client
+        .get(&url)
+        .header("Authorization", &api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Pexels video request error: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(format!("Pexels Video API error: HTTP {}", status));
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Pexels video read body error: {}", e))?;
+
+    let data: PexelsVideoSearchResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Pexels video JSON parse error: {} — body preview: {}", e, &body[..body.len().min(300)]))?;
+
+    Ok(data.videos)
+}
+
+/// Faz download de uma imagem Pexels para a pasta do projeto
+#[tauri::command]
+async fn download_pexels(
+    photo_id: u64,
+    photo_url: String,
+    alt: String,
+    project_path: String,
+) -> Result<String, String> {
+    use std::fs;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&photo_url)
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Read bytes error: {}", e))?;
+
+    let safe_name: String = if alt.trim().is_empty() {
+        format!("pexels_{}", photo_id)
+    } else {
+        alt.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect()
+    };
+
+    let file_name = format!("{}_{}.jpg", safe_name, photo_id);
+    let dest_dir = format!("{}/videos", project_path);
+    fs::create_dir_all(&dest_dir).map_err(|e| format!("Create dir error: {}", e))?;
+    let dest_path = format!("{}/{}", dest_dir, file_name);
+    fs::write(&dest_path, bytes).map_err(|e| format!("Write file error: {}", e))?;
+
+    Ok(file_name)
+}
+
+/// Faz download de um vídeo Pexels para a pasta do projeto
+#[tauri::command]
+async fn download_pexels_video(
+    video_id: u64,
+    video_url: String,  // link do video_file HD ou SD
+    author: String,
+    project_path: String,
+) -> Result<String, String> {
+    use std::fs;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&video_url)
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Read bytes error: {}", e))?;
+
+    let safe_name: String = if author.trim().is_empty() {
+        format!("pexels_video_{}", video_id)
+    } else {
+        author.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect()
+    };
+
+    let file_name = format!("{}_{}.mp4", safe_name, video_id);
+    let dest_dir = format!("{}/videos", project_path);
+    fs::create_dir_all(&dest_dir).map_err(|e| format!("Create dir error: {}", e))?;
+    let dest_path = format!("{}/{}", dest_dir, file_name);
+    fs::write(&dest_path, bytes).map_err(|e| format!("Write file error: {}", e))?;
+
+    Ok(file_name)
+}
+
 // ─── Helper interno ──────────────────────────────────────────
 
 fn urlencoding_simple(s: &str) -> String {
@@ -792,15 +1095,87 @@ async fn fetch_cloud_fonts() -> Result<serde_json::Value, String> {
     Ok(json)
 }
 
-#[tauri::command]
-async fn download_font_file(url: String, path: String) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
-    let content = response.bytes().await.map_err(|e| e.to_string())?;
+// Hierarquia de planos: free < pro < ultimate
+fn plan_level(plan: &str) -> u8 {
+    match plan {
+        "free"     => 0,
+        "pro"      => 1,
+        "ultimate" => 2,
+        _          => 0,
+    }
+}
 
-    fs::write(path, content).map_err(|e| e.to_string())?;
+#[tauri::command]
+async fn download_font_file(
+    id: String,      // ID da fonte (ex: "2")
+    path: String,         // caminho local onde salvar
+    settings_folder: String, // para ler o plano do usuário offline
+) -> Result<(), String> {
+
+    // 1. Busca fonts.json diretamente do servidor (fonte confiável)
+    let client = reqwest::Client::new();
+    let fonts_json: serde_json::Value = client
+        .get("https://wannacut.app/fonts.json")
+        .header("User-Agent", "WannaCut-App")
+        .send()
+        .await
+        .map_err(|e| format!("Erro ao buscar fonts.json: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Erro ao parsear fonts.json: {e}"))?;
+
+
+
+    // 2. Localiza a fonte pelo ID
+    let font = fonts_json["fonts"]
+        .as_array()
+        .and_then(|arr| arr.iter().find(|f| f["id"].as_str() == Some(&id)))
+        .ok_or_else(|| format!("Fonte com id '{id}' não encontrada"))?;
+
+    let font_file = font["file"]
+        .as_str()
+        .ok_or("Campo 'file' ausente na fonte")?;
+
+    let required_plan = font["plan"]
+        .as_str()
+        .unwrap_or("free");
+
+    // 3. Verifica o plano do usuário localmente (sem confiar no frontend)
+    let license = crate::plans::validate_offline(&settings_folder)
+        .map_err(|e| format!("Erro ao ler licença: {e}"))?;
+
+    
+   let user_plan_string = license.plan.label().to_lowercase();
+let user_plan = user_plan_string.as_str();
+
+    // 4. Compara os níveis de plano
+    if plan_level(user_plan) < plan_level(required_plan) {
+        return Err(format!(
+            "Access denied: this font requires a '{required_plan}' plan, but your current plan is '{user_plan}'."
+        ));
+    }
+
+    // 5. Monta a URL real a partir do nome do arquivo (nunca do frontend)
+    let download_url = format!(
+        "https://wannacut.app/fonts/{font_file}"
+    );
+
+    // 6. Baixa e salva
+    let content = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Erro no download: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("Erro ao ler bytes: {e}"))?;
+
+    std::fs::write(&path, content)
+        .map_err(|e| format!("Erro ao salvar arquivo: {e}"))?;
+
     Ok(())
 }
+
 
 #[tauri::command]
 fn list_fonts(fonts_path: String) -> Result<Vec<String>, String> {
@@ -2115,6 +2490,12 @@ fn main() {
             download_freesound,
             read_freesound_api_key,
             save_freesound_api_key,
+            search_pexels,
+            search_pexels_videos,
+            download_pexels,
+            download_pexels_video,
+            read_pexels_api_key,
+            save_pexels_api_key,
             plans::activate_license,
             plans::get_license_state,
             plans::deactivate_license,
