@@ -15,6 +15,7 @@
  */
 
 
+import { useTranslation } from 'react-i18next';
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, number } from 'framer-motion';
@@ -422,6 +423,7 @@ export function remapKeyframesToSpeed(
 const settingsFolder = localStorage.getItem("wannacut_settings_folder");
 
 export default function App() {
+  const { t } = useTranslation();
   // --- STATE MANAGEMENT ---
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [isSetupOpen, setIsSetupOpen] = useState(true);
@@ -1306,7 +1308,7 @@ const cleanEmptySpace = (trackId: number, clickTime: number) => {
     })
   );
 
-  showNotify(`Removed ${gap.toFixed(2)}s gap on track ${trackId + 1}`, 'success');
+  showNotify(t('notify.gapRemoved', { gap: gap.toFixed(2), track: trackId + 1 }), 'success');
 };
 
 
@@ -1398,12 +1400,12 @@ const separateAudio = async (clip: Clip) =>
 
           await loadAssets()
 
-          showNotify('Audio Extracted', "success") 
+          showNotify(t('notify.audioExtracted'), "success") 
 
       }
       catch (error) {
       
-        showNotify('Error in Audio Extract', "error") 
+        showNotify(t('notify.audioExtractError'), "error") 
         console.error('Error in copy_file', error);
       }
   }
@@ -1413,11 +1415,11 @@ const separateAudio = async (clip: Clip) =>
           {
             const newclip = {... clip, mute: !clip.mute} 
             setClips( prev => prev.map(c => c.id === clip.id ? newclip : c ) )
-            showNotify('Audio Restored', "success")
+            showNotify(t('notify.audioRestored'), "success")
           }
           catch (error)
           {
-             showNotify('Error in Audio Restore', "error")
+             showNotify(t('notify.audioRestoreError'), "error")
              console.log(error)
           }
   }
@@ -1441,7 +1443,7 @@ const runVocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_o
   const baseName = clip.name.split('.').slice(0, -1).join('.');
   const audioSrc = `${currentProjectPath}/extracted_audios/${baseName}.mp3`;
 
-  showNotify('Processing vocals... this may take a moment', 'success');
+  showNotify(t('notify.processingVocals'), 'success');
 
   try {
     const result = await invoke<{ vocals?: string; instrumental?: string }>('remove_vocals', {
@@ -1481,21 +1483,21 @@ const runVocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_o
 
     await loadAssets();
     showNotify(
-      mode === 'both'             ? 'Vocals and instrumental tracks created!'
-      : mode === 'vocals_only'    ? 'Vocals track created!'
-                                  : 'Instrumental track created!',
+      mode === 'both'             ? t('notify.vocalRemoverDone', { path: 'vocals + instrumental' })
+      : mode === 'vocals_only'    ? t('notify.vocalRemoverDone', { path: 'vocals' })
+                                  : t('notify.vocalRemoverDone', { path: 'instrumental' }),
       'success'
     );
   } catch (err: any) {
     console.error('vocalRemover error:', err);
-    showNotify(err?.toString() ?? 'Vocal remover failed', 'error');
+    showNotify(err?.toString() ?? t('notify.vocalRemoverFailed'), 'error');
   }
 };
 
 // Entry point — checks if engine/model are downloaded first
 const vocalRemover = async (clip: Clip, mode: 'vocals_only' | 'instrumental_only' | 'both') => {
   if (!currentProjectPath || !rootPath) {
-    showNotify('No project loaded', 'error');
+    showNotify(t('notify.noProjectLoaded'), 'error');
     return;
   }
 
@@ -1544,7 +1546,7 @@ const startVocalEngineDownload = async () => {
       await runVocalRemover(vocalPendingClip.clip, vocalPendingClip.mode);
     }
   } catch (err: any) {
-    showNotify(err?.toString() ?? 'Download failed', 'error');
+    showNotify(err?.toString() ?? t('notify.downloadFailed'), 'error');
     setVocalEngineModal(false);
   } finally {
     unlisten();
@@ -2641,10 +2643,10 @@ useEffect(() => {
         setTracks([])
         setProjectToDelete(null);
         loadProjects(); // Reload projects list       
-        showNotify("Project deleted", "success");
+        showNotify(t('notify.projectDeleted'), "success");
 
       } catch (e) {
-        showNotify("Error deleting project", "error");
+        showNotify(t('notify.projectDeleteError'), "error");
       }
     }
   };
@@ -2809,9 +2811,9 @@ const handleRenameAsset = async (oldName: string, newName: string) => {
       oldPath: `${currentProjectPath}/videos/${oldName}`, 
       newPath: `${currentProjectPath}/videos/${newName}` 
     });
-    showNotify("Asset renamed", "success");
+    showNotify(t('notify.assetRenamed'), "success");
   } catch (err) {
-    showNotify("Error renaming file", "error");
+    showNotify(t('notify.assetRenameError'), "error");
     // Revert in case of failure in backend
     setClips(previousClips);
     setAssets(previousAssets);
@@ -2873,14 +2875,14 @@ const handleCopy = () => {
   // Update the REF immediately (synchronously)
   clipboardRef.current = selectedClips;
   
-  showNotify(`${selectedClips.length} clips copied`, "success");
+  showNotify(t('notify.clipsCopied', { count: selectedClips.length }), "success");
 };
 
 const handlePaste = () => {
   const clipsToPaste = clipboardRef.current;
   
   if (clipsToPaste.length === 0) {
-    showNotify("Clipboard is empty", "error");
+    showNotify(t('notify.clipboardEmpty'), "error");
     return;
   }
 
@@ -2956,7 +2958,7 @@ const handlePaste = () => {
   setClips(newClipsList);
   setSelectedClipIds(pastedIds);
   
-  showNotify(`Pasted ${clipsToPaste.length} clips at playhead`, "success");
+  showNotify(t('notify.clipsPasted', { count: clipsToPaste.length }), "success");
 };
 
 
@@ -3090,7 +3092,7 @@ const handleUndo = () => {
   const newHistory = history.slice(0, validIndex);
   setHistory(newHistory);
 
-  showNotify("Undo", "success");
+  showNotify(t('notify.undo'), "success");
 };
 
 
@@ -3110,7 +3112,7 @@ const handleUndo = () => {
     setTracks(nextState.tracks)
     setRedoStack(newRedoStack);
     
-    showNotify("Redo", "success");
+    showNotify(t('notify.redo'), "success");
   };
 
 //Code to make player needle walk
@@ -3430,9 +3432,9 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
             await invoke('delete_file', { 
               path: `${currentProjectPath}/videos/${a.name}`, 
             });
-            showNotify(`Asset ${a.name} deleted`, "success");
+            showNotify(t('notify.assetDeleted', { name: a.name }), "success");
           } catch (err) {
-            showNotify("Error to delete asset", "error");
+            showNotify(t('notify.assetDeleteError'), "error");
             console.log('err to delete asset: ',err )
             
           }
@@ -3482,7 +3484,7 @@ const handleResize = (id: string, deltaX: number, side: 'left' | 'right') => {
         if (matchShortcut(e, 'snap_toggle')) {
           e.preventDefault();
           setIsSnapEnabled(prev => !prev);
-          showNotify(`Magnetic Snap: ${!isSnapEnabled ? 'ON' : 'OFF'}`, "success");
+          showNotify(`Magnetic Snap: ${!isSnapEnabled ? t('notify.snapOn') : t('notify.snapOff')}`, "success");
         }
 
         // Split
@@ -3659,16 +3661,16 @@ const handleSplit = () => {
 
     
     if (!targetClip) {
-      showNotify("Selected clip is not under the playhead", "error");
+      showNotify(t('notify.clipNotUnderPlayhead'), "error");
       return;
     }
   } else {
     if (clipsAtPlayhead.length > 1) {
-      showNotify("Multiple clips found! Select one to split.", "error");
+      showNotify(t('notify.multipleClipsFound'), "error");
       return;
     }
     if (clipsAtPlayhead.length === 0) {
-      showNotify("No clip under the playhead", "error");
+      showNotify(t('notify.noClipUnderPlayhead'), "error");
       return;
     }
     targetClip = clipsAtPlayhead[0];
@@ -3709,7 +3711,7 @@ const handleSplit = () => {
 
   //Default behavor: Select Right
   setSelectedClipIds([secondClip.id]);
-  showNotify("Clip split!", "success");
+  showNotify(t('notify.clipSplit'), "success");
 };
 
   //Function to snap
@@ -3845,13 +3847,13 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
 
           if(knowTypeByAssetName(clip.name) == 'image' && data.category == 'audio')
           {
-            showNotify('Effect not availible for this type of clip','error')
+            showNotify(t('notify.effectNotAvailable'),'error')
             return clip;
           }
           
           if(knowTypeByAssetName(clip.name) == 'audio' && data.category == 'video')
           {
-            showNotify('Effect not availible for this type of clip','error')
+            showNotify(t('notify.effectNotAvailable'),'error')
             return clip;
           }
 
@@ -4205,7 +4207,7 @@ const knowTypeByAssetName = (assetName: string, typeTrack: boolean = false) =>
 
       if(!type)
       {
-        showNotify("Invalid file type: Only video, audio, text, effects and images are allowed", "error");
+        showNotify(t('notify.invalidFileType'), "error");
         return null
       }
 
@@ -4483,7 +4485,7 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
         const isVideo = videoExtensions.includes(extension);
 
         if (!isImage && !isAudio && !isVideo) {
-          showNotify("Invalid file type: Only video, audio, and images are allowed", "error");
+          showNotify(t("notify.invalidFileTypeMedia"), "error");
           return;
         }
 
@@ -4500,7 +4502,7 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
       }
     }
     loadAssets();
-    showNotify("Assets imported", "success");
+    showNotify(t('notify.assetsImported'), "success");
     return;
   }
   
@@ -4517,7 +4519,7 @@ const handleNativeDrop = async (paths: string[], mouseX: number, mouseY: number)
 
 
         if (!isImage && !isAudio && !isVideo) {
-          showNotify("Invalid file type: Only video, audio, and images are allowed", "error");
+          showNotify(t("notify.invalidFileTypeMedia"), "error");
           return;
         }
 
@@ -4874,11 +4876,11 @@ const handleFinishSetup = async () => {
       setCurrentProjectPath(finalPath);
       setIsCreatingNew(false);
       loadProjects(rootPath); // <-- passa rootPath explícito aqui!
-      showNotify("Project Created!", "success");
+      showNotify(t('notify.projectCreated'), "success");
       
     } catch (e) {
       console.error(e);
-      showNotify("Error creating project structure", "error");
+      showNotify(t('notify.projectCreateError'), "error");
     }
   }
 };
@@ -4972,17 +4974,17 @@ const openProject = async (path: string) => {
     if (!youtubeUrl || !currentProjectPath) return;
     setIsDownloading(true);
     setDownloadYTprogress(0);
-    showNotify("Downloading...", "success");
+    showNotify(t('notify.downloading'), "success");
     try {
       await invoke('download_video', { projectPath: currentProjectPath, settingsFolder: settingsFolder, url: youtubeUrl, downloadMode });
-      showNotify("Download Complete!", "success");
+      showNotify(t('notify.downloadComplete'), "success");
       setIsImportModalOpen(false);
       setYoutubeUrl("");
       setDownloadYTprogress(0);
       await loadAssets();
     } catch (e) {
       alert(e)
-      showNotify("YT-DLP Error: Check your JS Runtime", "error");
+      showNotify(t('notify.ytdlpError'), "error");
     } finally {
       setIsDownloading(false);
       setDownloadYTprogress(0);
@@ -5149,7 +5151,7 @@ const openProject = async (path: string) => {
     setSelectedClipIds(selectedIds);
     setSelectedAssets([]); 
     
-    showNotify(`Split and selected everything to the ${direction}`, "success");
+    showNotify(t('notify.splitSelected', { direction }), "success");
 };
 
 
@@ -5526,12 +5528,12 @@ const handleImportFile = async () => {
         "success"
       );
     } else {
-      showNotify("No valid media files selected", "error");
+      showNotify(t('notify.noValidMedia'), "error");
     }
 
   } catch (err) {
     console.error(err);
-    showNotify("Error selecting or reading file", "error");
+    showNotify(t('notify.fileSelectError'), "error");
   }
 };
 
@@ -6065,8 +6067,8 @@ return (
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">Account</h3>
-            <h2 className="text-sm font-bold text-zinc-200 mt-0.5">Subscription Plan</h2>
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">{t('plan.account')}</h3>
+            <h2 className="text-sm font-bold text-zinc-200 mt-0.5">{t('plan.subscriptionPlan')}</h2>
           </div>
           <button 
             onClick={() => {
@@ -6084,15 +6086,15 @@ return (
         {!selectedUpgrade && (
           <div className="bg-zinc-950 border border-zinc-800/60 rounded-xl p-4 mb-6 flex items-center justify-between">
             <div>
-              <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Current Status</p>
+              <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">{t('plan.currentStatus')}</p>
               <p className="text-sm font-black uppercase tracking-widest mt-0.5 text-white">
-                {plan === 'ultimate' ? '🚀 Ultimate' : plan === 'pro' ? '💎 Pro' : '🌱 Free Plan'}
+                {plan === 'ultimate' ? '🚀 Ultimate' : plan === 'pro' ? '💎 Pro' : t('plan.freePlan')}
               </p>
             </div>
             <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full 
               ${plan === 'free' ? 'bg-zinc-800 text-zinc-400' : 'bg-gradient-to-r from-amber-500/20 to-rose-500/20 border border-rose-500/30 text-rose-400'}`}
             >
-              {plan === 'free' ? 'Limited' : 'Active'}
+              {plan === 'free' ? t('plan.limited') : t('plan.active')}
             </span>
           </div>
         )}
@@ -6107,10 +6109,10 @@ return (
                 className="w-full text-left border border-zinc-800 bg-white/[0.01] hover:bg-white/[0.03] rounded-xl p-3.5 hover:border-zinc-700 transition-all cursor-pointer block"
               >
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-zinc-200">Upgrade to Pro</p>
-                  <span className="text-[10px] font-semibold text-zinc-500">10 Splits/Day</span>
+                  <p className="text-xs font-bold text-zinc-200">{t('plan.upgradeToPro')}</p>
+                  <span className="text-[10px] font-semibold text-zinc-500">{t('plan.proSplits')}</span>
                 </div>
-                <p className="text-[10px] text-zinc-500 mt-1">Perfect for growing digital creators.</p>
+                <p className="text-[10px] text-zinc-500 mt-1">{t('plan.proDescription')}</p>
               </button>
             )}
 
@@ -6121,10 +6123,10 @@ return (
                 className="w-full text-left border border-zinc-800 bg-gradient-to-br from-amber-500/[0.01] to-rose-500/[0.01] hover:bg-gradient-to-br hover:from-amber-500/[0.03] hover:to-rose-500/[0.03] rounded-xl p-3.5 hover:border-rose-500/20 transition-all group cursor-pointer block"
               >
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400 group-hover:brightness-110 transition-all">Upgrade to Ultimate</p>
-                  <span className="text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded-md tracking-wider">UNLIMITED</span>
+                  <p className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400 group-hover:brightness-110 transition-all">{t('plan.upgradeToUltimate')}</p>
+                  <span className="text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded-md tracking-wider">{t('plan.unlimited')}</span>
                 </div>
-                <p className="text-[10px] text-zinc-500 mt-1">Full speed, no barriers, max performance.</p>
+                <p className="text-[10px] text-zinc-500 mt-1">{t('plan.ultimateDescription')}</p>
               </button>
             )}
           </div>
@@ -6140,18 +6142,18 @@ return (
               onClick={() => { setSelectedUpgrade(null); setActivationKey(''); }}
               className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 flex items-center gap-1 cursor-pointer transition-colors"
             >
-              ← Back to plans
+              {t('plan.backToPlans')}
             </button>
 
             <div>
               <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block mb-1.5">
-                Enter {selectedUpgrade === 'ultimate' ? '🚀 Ultimate' : '💎 Pro'} Activation Key
+                {t('plan.enterKey', { plan: selectedUpgrade === 'ultimate' ? '🚀 Ultimate' : '💎 Pro' })}
               </label>
               <input
                 type="text"
                 value={activationKey}
                 onChange={(e) => setActivationKey(e.target.value)}
-                placeholder= {selectedUpgrade === 'pro' ? 'WC-PRO-XXXX-XXXX...' : '"WC-ULT-XXXX-XXXX..."'}
+                placeholder= {selectedUpgrade === 'pro' ? t('plan.proPlaceholder') : t('plan.ultPlaceholder')}
                 className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500/50 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 placeholder-zinc-700 outline-none transition-all font-mono"
               />
             </div>
@@ -6161,7 +6163,7 @@ return (
               onClick={() => activateLicense()}
               className="w-full bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-black uppercase tracking-widest py-2.5 rounded-xl transition-all cursor-pointer shadow-lg"
             >
-              Activate License
+              {t('plan.activateLicense')}
             </button>
           </motion.div>
         )}
@@ -6171,7 +6173,7 @@ return (
           {plan !== 'ultimate' && (
             <div className="text-center">
               <p className="text-[10px] text-zinc-500 leading-relaxed">
-                Get your activation key instantly at:<br/>
+                {t('plan.getKeyAt')}<br/>
                 <a 
                   href="https://wannacut.app/getpro" 
                   target="_blank" 
@@ -6190,7 +6192,7 @@ return (
                 onClick={() => console.log("Ação de cancelamento futura")} 
                 className="text-[9px] uppercase font-black tracking-widest text-zinc-600 hover:text-rose-400 transition-colors cursor-pointer"
               >
-                Cancel Subscription
+                {t('plan.cancelSubscription')}
               </button>
             </div>
           )}
@@ -6209,7 +6211,7 @@ return (
     <button 
       onClick={() => setIsHudListOpen(!isHudListOpen)}
       className="absolute -top-2 -right-2 p-1.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 opacity-40 group-hover:opacity-100 hover:text-white transition-opacity shadow-lg z-[810]"
-      title={isHudListOpen ? "Collapse HUD" : "Expand HUD"}
+      title={isHudListOpen ? t('header.collapseHud') : t('header.expandHud')}
     >
       {isHudListOpen ? (
         <ArrowDownToLine size={14} className="rotate-180 transition-transform duration-300" />
@@ -6278,13 +6280,10 @@ return (
 
           <div>
 
-          <button className="inline-flex mr-15 items-center gap-2 p-2 bg-indigo-600/15 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-amber-400 transition-colors" title="Manage Account & Plans" onClick={() => setIsPlanModalOpen(true)}>
+          <button className="inline-flex mr-15 items-center gap-2 p-2 bg-indigo-600/15 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-amber-400 transition-colors" title={t('header.manageAccount')} onClick={() => setIsPlanModalOpen(true)}>
             <Sparkles size={20} />
-            <span className="text-xs font-bold uppercase tracking-wider pr-1">{plan === 'free' ? 'Get PRO' : plan === 'pro' ? 'Get Ultimate' : 'Manage Plan'}</span>
+            <span className="text-xs font-bold uppercase tracking-wider pr-1">{plan === 'free' ? t('header.getPro') : plan === 'pro' ? t('header.getUltimate') : t('header.managePlan')}</span>
           </button>
-        
-
-          <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Set Shortcuts' onClick={() => setIsShortcutsOpen(true)}><Keyboard size={20} /></button>
           <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" onClick={() => setIsSettingsOpen(true)}><Settings size={20} /></button>
           <button 
             onClick={() => {
@@ -6302,21 +6301,22 @@ return (
             {hasNewMessages && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse" />
             )}
+
           </button>
           </div>
         </header>
 
         <main className={`flex-1 flex overflow-hidden min-h-0`}>
           <aside className="w-64 border-r border-zinc-800 p-6 space-y-2 bg-[#0d0d0d]">
-            <button className="w-full flex items-center gap-3 px-4 py-2 bg-zinc-800 text-white rounded-lg text-sm font-bold"><Clock size={18} /> Recent</button>
+            <button className="w-full flex items-center gap-3 px-4 py-2 bg-zinc-800 text-white rounded-lg text-sm font-bold"><Clock size={18} /> {t('manager.recent')}</button>
             
           </aside>
 
           <section className="flex-1 p-10 overflow-y-auto">
             <div className="flex justify-between items-end mb-10">
               <div>
-                <h2 className="text-3xl font-black text-white mb-1">Your Productions</h2>
-                <p className="text-zinc-600 text-[10px] font-mono uppercase">{rootPath || 'Select a workspace'}</p>
+                <h2 className="text-3xl font-black text-white mb-1">{t('manager.yourProductions')}</h2>
+                <p className="text-zinc-600 text-[10px] font-mono uppercase">{rootPath || t('manager.selectWorkspace')}</p>
               </div>
               <button 
                 className="
@@ -6332,7 +6332,7 @@ return (
                 onClick={() => setIsCreatingNew(true)} 
               >
                 <Plus size={20} strokeWidth={3} className="text-white" />
-                <span className="tracking-widest uppercase">New Project</span>
+                <span className="tracking-widest uppercase">{t('manager.newProject')}</span>
               </button>
             </div>
 
@@ -6375,13 +6375,13 @@ return (
         {/* Editor Header */}
         <header className="h-12 border-b border-zinc-800 flex items-center justify-between px-4 bg-[#111] z-10 shadow-md">
           <div className="flex items-center gap-4">
-            <button onClick={() => {setIsSetupOpen(true); setIsProjectLoaded(false)}} className="text-zinc-500 hover:text-white text-[10px] font-bold">BACK</button>
+            <button onClick={() => {setIsSetupOpen(true); setIsProjectLoaded(false)}} className="text-zinc-500 hover:text-white text-[10px] font-bold">{t('header.back')}</button>
             <h1 className="text-[11px] font-black uppercase text-white tracking-widest">{projectName}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <button className="inline-flex mr-15 items-center gap-2 p-2 bg-indigo-600/15 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-amber-400 transition-colors" title="Manage Account & Plans" onClick={() => setIsPlanModalOpen(true)}>
+            <button className="inline-flex mr-15 items-center gap-2 p-2 bg-indigo-600/15 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-amber-400 transition-colors" title={t('header.manageAccount')} onClick={() => setIsPlanModalOpen(true)}>
               <Sparkles size={20} />
-              <span className="text-xs font-bold uppercase tracking-wider pr-1">{plan === 'free' ? 'Get PRO' : plan === 'pro' ? 'Get Ultimate' : 'Manage Plan'}</span>
+              <span className="text-xs font-bold uppercase tracking-wider pr-1">{plan === 'free' ? t('header.getPro') : plan === 'pro' ? t('header.getUltimate') : t('header.managePlan')}</span>
             </button>
 
 
@@ -6389,12 +6389,12 @@ return (
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all active:scale-95 shadow-lg shadow-red-900/20"
             >
-              <Youtube size={14} /> Download
+              <Youtube size={14} /> {t('header.download')}
             </button>
-            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Set Shortcuts' onClick={() => setIsShortcutsOpen(true)}><Keyboard size={16}/></button>
-            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Post in social media'><Share2 size={16}/></button>
-            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Settings' onClick={() => setIsSettingsOpen(true)}><Settings size={16}/></button>
-            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title='Export video' onClick={()=> { setIsExportModalOpen(true)}}><Import size={16}/></button>
+            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title={t('header.setShortcuts')} onClick={() => setIsShortcutsOpen(true)}><Keyboard size={16}/></button>
+            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title={t('header.postSocial')}><Share2 size={16}/></button>
+            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title={t('header.settings')} onClick={() => setIsSettingsOpen(true)}><Settings size={16}/></button>
+            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400" title={t('header.exportVideo')} onClick={()=> { setIsExportModalOpen(true)}}><Import size={16}/></button>
           </div>
         </header>
 
@@ -6555,7 +6555,7 @@ return (
           <span className="text-blue-400">IN: {inPoint.toFixed(2)}s</span>
           <span className="text-red-400">OUT: {outPoint.toFixed(2)}s</span>
        </div>
-       <span className="text-zinc-500 italic">Press I / O to Mark</span>
+       <span className="text-zinc-500 italic">{t('player.pressToMark')}</span>
     </div>
   </div>
 </div>
@@ -6674,9 +6674,9 @@ return (
                                   pngBase64,
                                 });
                                 await loadAssets();
-                                showNotify('Frame saved to assets!', 'success');
+                                showNotify(t('notify.frameSavedAsset'), 'success');
                               } catch (err: any) {
-                                showNotify(err?.toString() ?? 'Failed to save frame', 'error');
+                                showNotify(err?.toString() ?? t('notify.frameSaveError'), 'error');
                               }
                             }}
                             className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all"
@@ -6757,9 +6757,9 @@ return (
                                   return [...prev, { id: newTrackId, type: 'image' as any }];
                                 });
 
-                                showNotify('Frame added to timeline!', 'success');
+                                showNotify(t('notify.frameAddedTimeline'), 'success');
                               } catch (err: any) {
-                                showNotify(err?.toString() ?? 'Failed to insert frame', 'error');
+                                showNotify(err?.toString() ?? t('notify.frameInsertError'), 'error');
                               }
                             }}
                             className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all"
@@ -6961,13 +6961,13 @@ return (
                 onClick={() => {
                   const newState = !isSnapEnabled;
                   setIsSnapEnabled(newState);
-                  showNotify(`Snap: ${newState ? 'ON' : 'OFF'}`, "success");
+                  showNotify(`Snap: ${newState ? t('notify.snapOn') : t('notify.snapOff')}`, "success");
                 }}
                 className={`flex items-center gap-2 text-[10px] font-black uppercase transition-all ${isSnapEnabled ? 'text-red-500' : 'text-zinc-500 hover:text-white'}`}
-                title="Snap (Ctrl + T)"
+                title={t('timeline.snapCtrl')}
               >
                 <LayoutGrid size={14} className={isSnapEnabled ? "animate-pulse" : ""} />
-                Snap
+                {t('timeline.snap')}
               </button>
 
               {/* Zoom Control */}
@@ -6998,25 +6998,25 @@ return (
                   <button 
                     onClick={() => handleMassSplitAndSelect('left')}
                     className="flex flex-col items-center gap-0.5 px-2 py-1 rounded hover:bg-zinc-800 group transition-all"
-                    title="Split and Select Left (Ctrl+Q)"
+                    title={t('timeline.splitSelectLeft')}
                   >
                     <div className="flex items-center text-zinc-500 group-hover:text-blue-400">
                       <SkipBack size={14} className="mr-[-4px]" />
                       <Scissors size={12} />
                     </div>
-                    <span className="text-[8px] font-black text-zinc-600 uppercase">Sel Left</span>
+                    <span className="text-[8px] font-black text-zinc-600 uppercase">{t('timeline.selLeft')}</span>
                   </button>
 
                   <button 
                     onClick={() => handleMassSplitAndSelect('right')}
                     className="flex flex-col items-center gap-0.5 px-2 py-1 rounded hover:bg-zinc-800 group transition-all"
-                    title="Split and Select Right (Ctrl+W)"
+                    title={t('timeline.splitSelectRight')}
                   >
                     <div className="flex items-center text-zinc-500 group-hover:text-blue-400">
                       <Scissors size={12} />
                       <SkipForward size={14} className="ml-[-4px]" />
                     </div>
-                    <span className="text-[8px] font-black text-zinc-600 uppercase">Sel Right</span>
+                    <span className="text-[8px] font-black text-zinc-600 uppercase">{t('timeline.selRight')}</span>
                   </button>
                 </div>
             </div>
@@ -7270,7 +7270,7 @@ return (
               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
             >
               <BrushCleaning size={14} className="opacity-70" />
-              <span>Clean Empty Space</span>
+              <span>{t('timeline.cleanEmptySpace')}</span>
             </button>
 
             <button
@@ -7281,7 +7281,7 @@ return (
               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
             >
               <ClipboardPaste size={14} className="opacity-70" />
-              <span>Paste Effects and Keyframes </span>
+              <span>{t('timeline.pasteEffectsKeyframes')}</span>
             </button>
 
 
@@ -7294,7 +7294,7 @@ return (
               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-cyan-600 hover:text-white transition-colors flex items-center gap-3"
             >
               <ClipboardPaste size={14} className="opacity-70" />
-              <span> Paste Mask </span>
+              <span>{t('timeline.pasteMask')}</span>
             </button>
 
 
@@ -7476,7 +7476,7 @@ return (
                                   className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                                 >
                                   <ClipboardPaste size={14} className="opacity-70" />
-                                  <span> Paste Mask </span>
+                                  <span>{t('timeline.pasteMask')}</span>
                                 </button>
                             }
 
@@ -7539,7 +7539,7 @@ return (
                               <div className={`w-full text-left px-3 py-2 text-sm text-zinc-200 transition-colors flex items-center justify-between cursor-default ${activeSubmenu === 'vocalRemover' ? 'bg-zinc-800' : ''}`}>
                                 <div className="flex items-center gap-3">
                                   <MicOffIcon size={14} className="opacity-70" />
-                                  <span>Vocal Remover</span>
+                                  <span>{t('timeline.vocalRemover')}</span>
                                 </div>
                                 <SkipForward size={12} className="opacity-40" />
                               </div>
@@ -7584,7 +7584,7 @@ return (
                           className="w-full text-left px-3 py-2 text-sm text-amber-400 hover:bg-zinc-800 transition-all flex items-center gap-3"
                         >
                           <EyeOff size={14} />
-                          <span>Hide Keyframes</span>
+                          <span>{t('timeline.hideKeyframes')}</span>
                         </button>
 
 
@@ -7599,7 +7599,7 @@ return (
                           >
                             <div className="flex items-center gap-3">
                               <Diamond size={14} className="text-violet-400 opacity-80" />
-                              <span className="font-medium">Keyframable</span>
+                              <span className="font-medium">{t('timeline.keyframable')}</span>
                             </div>
                             <SkipForward size={12} className="opacity-40" />
                           </div>
@@ -7658,7 +7658,7 @@ return (
                             >
                               <div className="flex items-center gap-3">
                                 <Scissors size={14} className="text-sky-400 opacity-80" />
-                                <span className="font-medium">Mask</span>
+                                <span className="font-medium">{t('timeline.mask')}</span>
                               </div>
                               <SkipForward size={12} className="opacity-40" />
                             </div>
@@ -7727,7 +7727,7 @@ return (
                           }}
                           
                           
-                          >Remove Clip</span>
+                          >{t('timeline.removeClip')}</span>
                         </button>
                       </div>
 
@@ -7870,7 +7870,7 @@ return (
             onClick={(e) => {
               e.stopPropagation();
               // Confirmação simples para evitar exclusão acidental
-              if(!confirm("Do you want to delete all keyframes for this property?")) return;
+              if(!confirm(t('timeline.deleteKfConfirm'))) return;
 
               setClips(prev => prev.map(c => {
                 if (c.id === clip.id && c.activeKeyframeView) {
@@ -7891,7 +7891,7 @@ return (
               }));
             }}
             className="bg-zinc-800 hover:bg-amber-600 text-white rounded-full p-0.5 transition-colors"
-            title="Limpar todos os keyframes desta propriedade"
+            title={t('timeline.clearKfTitle')}
           >
             <BrushCleaning size={8} />
           </button>
@@ -8072,7 +8072,7 @@ return (
                 e.stopPropagation();
                 setTimelineTransitions(prev => prev.filter(t => t.id !== trans.id));
               }}
-              title="Remove transition"
+              title={t('timeline.removeTransition')}
             >
               ×
             </button>
@@ -8134,15 +8134,15 @@ return (
         animate={{ scale: 1, opacity: 1 }} 
         className="bg-[#121212] border border-zinc-800 p-8 rounded-3xl w-full max-w-md shadow-2xl"
       >
-        <h2 className="text-2xl font-black mb-6 text-white italic tracking-tighter">NEW PROJECT</h2>
+        <h2 className="text-2xl font-black mb-6 text-white italic tracking-tighter">{t('newProject.title')}</h2>
         
         <div className="space-y-4">
           {/* Project Title */}
           <div>
-            <label className="text-[10px] font-black text-zinc-500 uppercase mb-2 block">Project Name</label>
+            <label className="text-[10px] font-black text-zinc-500 uppercase mb-2 block">{t('newProject.projectName')}</label>
             <input 
               type="text" 
-              placeholder="My Awesome Project" 
+              placeholder={t('newProject.projectNamePlaceholder')} 
               onChange={(e) => {setProjectName(e.target.value)
                 setProjectConfig({ ...projectConfig, name: e.target.value})
               }}
@@ -8153,7 +8153,7 @@ return (
           {/* Resolution & FPS Grid */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-[10px] font-black text-zinc-500 uppercase mb-2 block">Resolution</label>
+              <label className="text-[10px] font-black text-zinc-500 uppercase mb-2 block">{t('newProject.resolution')}</label>
               <select 
                 onChange={(e) => {
                   const [w, h] = e.target.value.split('x').map(Number);
@@ -8169,7 +8169,7 @@ return (
             </div>
 
             <div>
-              <label className="text-[10px] font-black text-zinc-500 uppercase mb-2 block">Frame Rate</label>
+              <label className="text-[10px] font-black text-zinc-500 uppercase mb-2 block">{t('newProject.frameRate')}</label>
               <select 
                 onChange={(e) => setProjectConfig({ ...projectConfig, fps: Number(e.target.value) })}
                 className="w-full bg-black border border-zinc-800 rounded-xl px-3 py-3 text-white font-bold outline-none focus:border-red-600 transition-all text-xs appearance-none"
@@ -8188,13 +8188,13 @@ return (
             onClick={() => setIsCreatingNew(false)} 
             className="flex-1 py-4 text-[10px] font-black text-zinc-600 hover:text-white transition-colors uppercase tracking-widest"
           >
-            Cancel
+            {t('newProject.cancel')}
           </button>
           <button 
             onClick={handleFinishSetup} 
             className="flex-1 bg-cyan-500 hover:bg-cyan-600 py-4 rounded-2xl font-black text-xs text-white uppercase tracking-widest shadow-lg shadow-red-900/20 transition-all"
           >
-            Create Project
+            {t('newProject.create')}
           </button>
         </div>
       </motion.div>
@@ -8207,16 +8207,16 @@ return (
       {isImportModalOpen && (
         <div className="fixed inset-0 bg-black/90 z-[400] flex items-center justify-center p-4">
           <motion.div initial={{ y: 20 }} animate={{ y: 0 }} className="bg-[#18181b] border border-zinc-800 p-8 rounded-3xl w-full max-w-md">
-            <h2 className="text-xl font-black flex items-center gap-3 text-white mb-6"><Youtube className="text-red-600" /> YT DOWNLOAD</h2>
-            <input type="text" placeholder="Video URL..." value={youtubeUrl} onChange={(e) => setYoutubeUrl(e.target.value)}
+            <h2 className="text-xl font-black flex items-center gap-3 text-white mb-6"><Youtube className="text-red-600" /> {t('ytDownload.title')}</h2>
+            <input type="text" placeholder={t('ytDownload.urlPlaceholder')} value={youtubeUrl} onChange={(e) => setYoutubeUrl(e.target.value)}
               className="w-full bg-black border border-zinc-700 rounded-xl px-4 py-4 text-sm font-bold text-white outline-none focus:border-red-600 mb-5" />
 
             {/* Mode selector */}
             <div className="mb-5">
-              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3">Format & Quality</p>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3">{t('ytDownload.formatQuality')}</p>
 
               {/* Video options */}
-              <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Video</p>
+              <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">{t('ytDownload.video')}</p>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {([
                   { id: 'video_best', label: 'Best',  sub: 'auto' },
@@ -8239,7 +8239,7 @@ return (
               </div>
 
               {/* Audio options */}
-              <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Audio only</p>
+              <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">{t('ytDownload.audioOnly')}</p>
               <div className="grid grid-cols-2 gap-2">
                 {([
                   { id: 'audio_mp3', label: 'MP3', sub: '192 kbps' },
@@ -8282,11 +8282,11 @@ return (
                     await invoke('cancel_video_download');
                     setIsDownloading(false);
                     setDownloadYTprogress(0);
-                    showNotify('Download cancelled.', 'error');
+                    showNotify(t('notify.downloadCancelled'), 'error');
                   }}
                   className="w-full mt-2 py-3 rounded-xl font-black text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-700 uppercase tracking-widest transition-all"
                 >
-                  Cancel
+                  {t('ytDownload.cancel')}
                 </button>
               )}
             </div>
@@ -8310,13 +8310,13 @@ return (
             <div className="w-16 h-16 bg-red-600/10 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
               <X size={32} />
             </div>
-            <h2 className="text-xl font-black text-white mb-2 uppercase italic tracking-tighter">Are you sure?</h2>
+            <h2 className="text-xl font-black text-white mb-2 uppercase italic tracking-tighter">{t('deleteProject.title')}</h2>
             <p className="text-zinc-500 text-xs mb-8">
-              Deleting <span className="text-white font-bold">{projectToDelete.name}</span> is permanent.
+              {t('deleteProject.description', { name: projectToDelete.name })}
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setProjectToDelete(null)} className="flex-1 py-3 text-[10px] font-black text-zinc-500 hover:text-white uppercase tracking-widest">Cancel</button>
-              <button onClick={handleDeleteProject} className="flex-1 bg-red-600 hover:bg-red-700 py-3 rounded-xl font-black text-xs text-white uppercase">Delete</button>
+              <button onClick={() => setProjectToDelete(null)} className="flex-1 py-3 text-[10px] font-black text-zinc-500 hover:text-white uppercase tracking-widest">{t('deleteProject.cancel')}</button>
+              <button onClick={handleDeleteProject} className="flex-1 bg-red-600 hover:bg-red-700 py-3 rounded-xl font-black text-xs text-white uppercase">{t('deleteProject.delete')}</button>
             </div>
           </motion.div>
         </div>
@@ -8341,10 +8341,10 @@ return (
       openProjectEarly(parsedData); 
       
      
-      showNotify("Timeline successfully rolled back in history!", "success");
+      showNotify(t('notify.historyRolledBack'), "success");
     } catch (e) {
       console.error("Error parsing history project json:", e);
-      showNotify("Error parsing backup data package.", "error");
+      showNotify(t('notify.historyParseError'), "error");
     }
   }}
   checkConfig = {checkConfig}

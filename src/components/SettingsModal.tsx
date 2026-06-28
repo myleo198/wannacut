@@ -1,3 +1,5 @@
+
+import i18n from '../i18n';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -36,6 +38,9 @@ interface Props {
   checkConfig:() => void
 
 }
+
+
+
 
 export const SettingsModal: React.FC<Props> = ({ 
   isOpen, 
@@ -89,6 +94,20 @@ export const SettingsModal: React.FC<Props> = ({
       setIsLoadingHistory(false);
     }
   };
+
+
+  //coidgo pras langs
+  
+    const langs = [
+    { code: 'pt', label: 'Português' },
+    { code: 'en', label: 'English' },
+    { code: 'es', label: 'Español' },
+    ];
+
+    const change = (code: string) => {
+    i18n.changeLanguage(code);
+    localStorage.setItem('lang', code);
+    };
 
 
   // 1. Chamado ao clicar no botão "Restore Version" da lista
@@ -442,6 +461,13 @@ const executeRestore = async () => {
                     </button>
                   </div>
                 </section>
+
+
+
+
+                 <select value={i18n.language} onChange={e => change(e.target.value)}>
+                  {langs.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
               </div>
             )}
 
