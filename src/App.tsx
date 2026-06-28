@@ -1634,6 +1634,7 @@ const startExport = async (format: ExportFormat) => {
       settingsFolder: settingsFolder ?? undefined,
       exportKind: format.kind,
       exportCodec: format.codec,
+      timelineTransitions: timelineTransitionsRef.current,
       onProgress: (percent) => {
         setRenderingProjects(prev =>
           prev.map(r =>
@@ -2403,8 +2404,8 @@ const newDrawFrame = async (time:number | null = null, audios: any| null = null)
         invoke,
         settingsFolder,
         topAudios: audios ? audios : topAudios, 
-        isPlaying
-        
+        isPlaying,
+        timelineTransitions: timelineTransitionsRef.current,
       });
 
     }
@@ -7449,11 +7450,12 @@ return (
                         style={{ top: adjustedY, left: adjustedX }}
                       >
                         {/* Opção: Separate/Recover Audio (Apenas Vídeo) */}
-                        {contextMenu?.type === 'video' && (
+
+                        {(contextMenu?.type === 'video' || contextMenu?.type === 'image') && ( 
+                          
                           <>
 
-
-                            <button 
+                          <button 
                               onClick={() => {
                                 setcopiedMask(contextMenu.clip)
                               }}
@@ -7505,6 +7507,18 @@ return (
                                 </button>
                             }
 
+                            </>
+                            )
+                        }
+
+
+
+
+                        {contextMenu?.type === 'video' && (
+                          <>
+
+
+                           
 
                             <button 
                               onClick={() => {
@@ -8010,14 +8024,20 @@ return (
 
 
         // linha 8002 — troca o +200 pelo valor real da ref
-        const calib = pixelsPerSecond > 40 ?  0.83 *pixelsPerSecond  : pixelsPerSecond
 
-        const left = ((trans.junctionTime - trans.durationLeft) * pixelsPerSecond) + 200 + calib
         const width = (trans.durationLeft + trans.durationRight) * pixelsPerSecond;
+
+        const calib = pixelsPerSecond > 40 ?  (0.83 *pixelsPerSecond)  : pixelsPerSecond;
+        const calib2 =  pixelsPerSecond > 10 ?  0.75 * width : 0
+
+
+        const left = ((trans.junctionTime - trans.durationLeft) * pixelsPerSecond) + 200 + calib - calib2
         const TRACK_HEIGHT = 64;
         const TRACK_GAP = 4;
         const RULER_H = 32;
         const top = RULER_H + trackIndex * (TRACK_HEIGHT + TRACK_GAP) + 20;
+
+        console.log('transitions: ', trans.junctionTime )
 
         return (
           <div

@@ -1145,8 +1145,8 @@ async fn download_font_file(
         .map_err(|e| format!("Erro ao ler licença: {e}"))?;
 
     
-   let user_plan_string = license.plan.label().to_lowercase();
-let user_plan = user_plan_string.as_str();
+    let user_plan_string = license.plan.label().to_lowercase();
+    let user_plan = user_plan_string.as_str();
 
     // 4. Compara os níveis de plano
     if plan_level(user_plan) < plan_level(required_plan) {

@@ -79,6 +79,11 @@ export interface ExportOptions {
    * Defaults to 'mp4'.
    */
   exportCodec?: ExportCodec;
+  /**
+   * Transições da timeline a serem renderizadas durante o export.
+   * Repassadas ao drawFrame frame a frame.
+   */
+  timelineTransitions?: any[];
   onProgress?: (percent: number) => void;
   onError?: (msg: string) => void;
   gpuName?: string | null; 
@@ -94,6 +99,7 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
     getInterpolatedValueWithFades, settingsFolder, onProgress, onError,
     exportKind  = 'video',
     exportCodec = 'mp4',
+    timelineTransitions = [],
     gpuName
   } = opts;
 
@@ -228,6 +234,7 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
         topAudios:   topAudiosRef                    as any,
         isPlaying:   false,
         settingsFolder,
+        timelineTransitions,
       });
 
       // (Removido) offscreenRenderer.render(exportScene, exportCamera) duplicado:
