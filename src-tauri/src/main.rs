@@ -2301,7 +2301,7 @@ fn main() {
     /// O Rust apenas combina os dois streams com FFmpeg.
 
     #[tauri::command]
-    async fn assemble_exported_video(
+   async fn assemble_exported_video(
         app_handle: tauri::AppHandle,
         project_path: String,
         target_path: String,
@@ -2309,7 +2309,6 @@ fn main() {
         duration: f64,
         width: u32,
         height: u32,
-        gpu_name: Option<String>,
     ) -> Result<(), String> {
         let proj = std::path::Path::new(&project_path);
         let frames_dir = proj.join("export_frames");
@@ -2317,49 +2316,30 @@ fn main() {
         let video_only_path = proj.join("export_video_only.mp4");
         let frame_pattern = frames_dir.join("%06d.png");
 
-        let hw_args = get_hwaccel_args(gpu_name.as_deref());
-        println!("[Export] GPU: {:?} → hwaccel args: {:?}", gpu_name, hw_args);
-
-        // Escolhe o codec de vídeo com base na GPU disponível
-        // Com CUDA (NVIDIA) → h264_nvenc, com VAAPI (AMD/Intel) → h264_vaapi, fallback → libx264
-        let (vcodec, extra_encode_args): (&str, Vec<String>) = {
-            let name = gpu_name.as_deref().unwrap_or("").to_lowercase();
-            if name.contains("nvidia") || name.contains("geforce") || name.contains("rtx") || name.contains("gtx") || name.contains("quadro") {
-                ("h264_nvenc", vec!["-preset".into(), "p4".into(), "-rc".into(), "vbr".into(), "-cq".into(), "19".into()])
-            } else if name.contains("amd") || name.contains("radeon") {
-                ("h264_vaapi", vec!["-vf".into(), format!("scale={}:{},format=nv12,hwupload", width, height), "-qp".into(), "20".into()])
-            } else if name.contains("intel") {
-                ("h264_qsv", vec!["-preset".into(), "medium".into(), "-global_quality".into(), "20".into()])
-            } else {
-                // Software: libx264 (comportamento original)
-                ("libx264", vec!["-preset".into(), "fast".into(), "-crf".into(), "18".into()])
-            }
-        };
-
         // -----------------------------------------------------------------------
-        // PASSO 1: PNGs → vídeo sem áudio (com aceleração se disponível)
+        // PASSO 1: PNGs → vídeo sem áudio
         // -----------------------------------------------------------------------
-        let mut step1_args: Vec<String> = vec!["-y".into()];
-        // Hwaccel args vão ANTES do -i (para decodificação/pipeline de GPU)
-        step1_args.extend(hw_args.clone());
-        step1_args.extend([
-            "-framerate".into(), fps.to_string(),
-            "-i".into(), frame_pattern.to_string_lossy().to_string(),
-            "-c:v".into(), vcodec.into(),
-        ]);
-        step1_args.extend(extra_encode_args);
-        // Scale via vf apenas se não for VAAPI (que já inclui scale no filtro acima)
-        let name_lower = gpu_name.as_deref().unwrap_or("").to_lowercase();
-        if !name_lower.contains("amd") && !name_lower.contains("radeon") {
-            step1_args.extend(["-vf".into(), format!("scale={}:{}", width, height)]);
-        }
-        step1_args.extend(["-pix_fmt".into(), "yuv420p".into()]);
-        step1_args.push(video_only_path.to_string_lossy().to_string());
-
         let step1 = app_handle
             .shell()
-            .command("ffmpeg")
-            .args(step1_args)
+            .command("ffmpeg") // Corrigido para .command() minúsculo (comando global)
+            .args([
+                "-y",
+                "-framerate",
+                &fps.to_string(),
+                "-i",
+                &frame_pattern.to_string_lossy(),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-vf",
+                &format!("scale={}:{}", width, height),
+                &video_only_path.to_string_lossy(),
+            ])
             .output()
             .await
             .map_err(|e| format!("FFmpeg (frames→video) falhou: {}", e))?;
@@ -2429,7 +2409,6 @@ fn main() {
 
         Ok(())
     }
-
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())

@@ -7355,8 +7355,8 @@ return (
                 e.stopPropagation(); // Importante para não propagar para a timeline pai
 
                 // Em vez de olhar os types, tente ler o conteúdo diretamente
-                const transitionData = e.dataTransfer.getData('application/wannacut-transition');
-                const effectData = e.dataTransfer.getData('application/wannacut-effect');
+                const transitionData = e.dataTransfer.types.includes('application/wannacut-transition');
+                const effectData = e.dataTransfer.types.includes('application/wannacut-effect');
 
                 console.log('Drop detectado!', { transitionData, effectData });
 
@@ -7512,26 +7512,13 @@ return (
                         }
 
 
+                        {/*Vocal Remover menu context*/}
+                        {
 
-
-                        {contextMenu?.type === 'video' && (
-                          <>
-
+                           (contextMenu?.type === 'video' || contextMenu?.type === 'audio')   && (
 
                            
-
-                            <button 
-                              onClick={() => {
-                                separateAudio(contextMenu?.clip);
-                                setContextMenu(null);
-                              }}
-                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
-                            >
-                              <Music size={14} className="opacity-70" />
-                              <span>{contextMenu?.clip.mute ? 'Recover Audio' : 'Separate Audio'}</span>
-                            </button>
-
-                            {/* Vocal Remover with submenu */}
+                            
                             <div className="relative"
                               onMouseEnter={() => setActiveSubmenu('vocalRemover')}
                               onMouseLeave={() => setActiveSubmenu(null)}
@@ -7568,6 +7555,33 @@ return (
                                 </div>
                               )}
                             </div>
+
+                              )
+
+
+
+                        }
+
+
+
+
+                        {contextMenu?.type === 'video' && (
+                          <>
+
+
+                           
+
+                            <button 
+                              onClick={() => {
+                                separateAudio(contextMenu?.clip);
+                                setContextMenu(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                            >
+                              <Music size={14} className="opacity-70" />
+                              <span>{contextMenu?.clip.mute ? 'Recover Audio' : 'Separate Audio'}</span>
+                            </button>
+
 
                             <div className="h-[1px] bg-white/5 my-1 mx-2" />
                           </>

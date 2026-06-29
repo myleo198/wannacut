@@ -279,7 +279,6 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       width:  W,
       height: H,
       codec:  exportCodec,   // 'mp4' | 'mkv'
-      gpuName: gpuName ?? null,
     });
 
     onProgress?.(100);
