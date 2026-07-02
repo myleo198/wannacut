@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RotateCcw, Check, Keyboard } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,13 +46,6 @@ export const DEFAULT_SHORTCUTS: ShortcutEntry[] = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const CATEGORY_LABELS: Record<ShortcutEntry['category'], string> = {
-  timeline: 'Timeline',
-  edit:     'Edit',
-  player:   'Player',
-  other:    'Other',
-};
 
 const CATEGORY_ORDER: ShortcutEntry['category'][] = ['timeline', 'edit', 'player', 'other'];
 
@@ -131,6 +125,7 @@ interface Props {
 }
 
 export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsChange }: Props) {
+  const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState<ShortcutEntry['category']>('timeline');
   const [entries, setEntries]               = useState<ShortcutEntry[]>(DEFAULT_SHORTCUTS);
   const [editingId, setEditingId]           = useState<string | null>(null);
@@ -188,6 +183,13 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
     setDirty(false);
   };
 
+  const CATEGORY_LABELS: Record<ShortcutEntry['category'], string> = {
+    timeline: t('shortcuts.categories.timeline'),
+    edit:     t('shortcuts.categories.edit'),
+    player:   t('shortcuts.categories.player'),
+    other:    t('shortcuts.categories.other'),
+  };
+
   const visible = entries.filter(e => e.category === activeCategory);
 
   return (
@@ -209,7 +211,7 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
               <div className="flex items-center gap-3">
                 <Keyboard size={16} className="text-cyan-500" />
-                <h2 className="text-sm font-black text-white uppercase tracking-widest">Shortcuts</h2>
+                <h2 className="text-sm font-black text-white uppercase tracking-widest">{t('shortcuts.title')}</h2>
               </div>
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-white transition-colors">
                 <X size={16} />
@@ -236,7 +238,7 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
             {/* List */}
             <div className="px-6 py-2 space-y-0.5 max-h-[400px] overflow-y-auto">
               {visible.length === 0 && (
-                <p className="text-center text-zinc-600 text-xs py-10">No shortcuts in this category.</p>
+                <p className="text-center text-zinc-600 text-xs py-10">{t('shortcuts.noShortcuts')}</p>
               )}
               {visible.map(entry => {
                 const isEditing = editingId === entry.id;
@@ -250,7 +252,7 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
                     }`}
                   >
                     <span className={`text-xs font-bold ${isEditing ? 'text-cyan-300' : 'text-zinc-300'}`}>
-                      {entry.label}
+                      {t(`shortcuts.labels.${entry.id}`, entry.label)}
                     </span>
 
                     <div className="flex items-center gap-2">
@@ -259,13 +261,13 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
                           <div className="flex items-center gap-1 min-w-[130px] justify-end">
                             {pendingKeys.length > 0
                               ? pendingKeys.map((k, i) => <KeyBadge key={i} k={k} />)
-                              : <span className="text-[10px] text-zinc-500 italic">press a key…</span>
+                              : <span className="text-[10px] text-zinc-500 italic">{t('shortcuts.pressKey')}</span>
                             }
                           </div>
-                          <button onClick={confirmEdit} className="p-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors" title="Confirm">
+                          <button onClick={confirmEdit} className="p-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors" title={t('shortcuts.confirm')}>
                             <Check size={12} />
                           </button>
-                          <button onClick={cancelEdit} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-white transition-colors" title="Cancel">
+                          <button onClick={cancelEdit} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-white transition-colors" title={t('shortcuts.cancel')}>
                             <X size={12} />
                           </button>
                         </>
@@ -273,7 +275,7 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
                         <button
                           onClick={() => startEdit(entry.id, entry.keys)}
                           className="flex items-center gap-1 hover:opacity-70 transition-opacity"
-                          title="Click to remap"
+                          title={t('shortcuts.clickToRemap')}
                         >
                           {entry.keys.map((k, i) => <KeyBadge key={i} k={k} />)}
                         </button>
@@ -290,14 +292,14 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
                 onClick={handleReset}
                 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-red-400 transition-colors"
               >
-                <RotateCcw size={12} /> Reset to defaults
+                <RotateCcw size={12} /> {t('shortcuts.resetToDefaults')}
               </button>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => { cancelEdit(); onClose(); }}
                   className="px-5 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition-colors"
                 >
-                  Cancel
+                  {t('shortcuts.cancel')}
                 </button>
                 <button
                   onClick={handleSave}
@@ -308,7 +310,7 @@ export function ShortcutsModal({ isOpen, onClose, settingsFolder, onShortcutsCha
                       : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
                   }`}
                 >
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving ? t('shortcuts.saving') : t('shortcuts.save')}
                 </button>
               </div>
             </div>

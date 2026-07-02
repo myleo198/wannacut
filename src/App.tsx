@@ -70,7 +70,9 @@ import {
   ArrowDownToLine,
   ExternalLink,
   Copy,
-  ClipboardPaste
+  ClipboardPaste,
+  VolumeOff,
+  VolumeIcon
   
 } from 'lucide-react';
 
@@ -1620,7 +1622,6 @@ const startExport = async (format: ExportFormat) => {
     const fps = projectConfig.fps || 30;
     const capturedProjectName = projectName; // capture for closures
 
-  alert(wannacutSettings.gpu)
 
     await exportVideo({
       targetPath: targetPath as string,
@@ -2181,128 +2182,6 @@ const getOpacityAtTime = (clip: Clip) => {
 
 
 
-// Objetos do Core Engine
-
-// 1. Inicialize com null
-/*
-
-const [frameSrc, setFrameSrc] = useState<string | null>(null);
-
- const lastRenderTime = useRef(0);
- const RENDER_INTERVAL = 1000 / 15; // Limita o preview a 15 FPS para suavidade
-
-
- const isRendering = useRef(false);
-
-
-const newDrawFrame = async (time: number | null = null) => {
-    if (isRendering.current) return;
-
-    const now = Date.now();
-    if (isPlaying && now - lastRenderTime.current < 50) return;
-
-    isRendering.current = true;
-
-    try {
-        const targetTime = time !== null ? time : currentTime;
-        const currentClips = topClips.current ?? [];
-
-        if (currentClips.length === 0) {
-            setFrameSrc(null);
-            return;
-        }
-
-        // FAST PATH: só vídeo simples (1 clip, sem efeitos, sem texto, sem rotação 3D)
-        // Imagens SEMPRE vão pelo Python — o Rust não compõe no canvas do projeto
-        // e não aplica zoom/posição corretamente para imagens estáticas.
-        const hasComplexity = currentClips.some(c =>
-            (c.effects && c.effects.length > 0) ||
-            c.type === 'text' ||
-            (c.keyframes?.rotation3d && c.keyframes.rotation3d.length > 0) ||
-            (c.keyframes?.zoom && c.keyframes.zoom.some(k =>
-                typeof k.value === 'number' && k.value !== 1.0
-            ))
-        );
-
-        const clipType0 = currentClips[0]?.type ?? knowTypeByAssetName(currentClips[0]?.name ?? '');
-        const isSingleSimpleVideo = !hasComplexity && currentClips.length === 1 && clipType0 === 'video';
-
-        if (isSingleSimpleVideo) {
-            const clip = currentClips[0];
-            const assetPath = `${currentProjectPath}/videos/${clip.name}`;
-            const localT = targetTime - clip.start;
-            const seekMs = ((clip.beginmoment ?? 0) + localT) * 1000;
-
-            try {
-                const frameData = await invoke<string>('get_video_frame', {
-                    path: assetPath,
-                    timeMs: seekMs
-                });
-                setFrameSrc(frameData);
-                lastRenderTime.current = Date.now();
-                return;
-            } catch {
-                // se falhar no fast path, cai no Python abaixo
-            }
-        }
-
-        // 🐢 SLOW PATH: Python para composição complexa (múltiplos clips, efeitos, texto)
-        const frameData = await invoke<string>('get_preview_frame', {
-            data: {
-                project_path: currentProjectPath,
-                project_dimensions: { width: projectConfig.width, height: projectConfig.height },
-                clips: makeSortClips(topClips.current),
-                preview_time: targetTime,
-                fps: 10,
-                is_preview: true
-            }
-        });
-
-        if (frameData) {
-            setFrameSrc(frameData);
-            lastRenderTime.current = Date.now();
-        }
-    } catch (e) {
-        console.error("Erro no motor:", e);
-    } finally {
-        isRendering.current = false;
-    }
-};
-
-
-
-const lastDrawTimeRef = useRef<number>(0);
-const FPS_target = 10;
-const frameInterval = 1000 / FPS_target; // 100ms
-
-
-useEffect(() => {
-  
-    updatePreview(currentTime);
-    updateAudio();
-
-    const now = performance.now();
-    if (now - lastDrawTimeRef.current >= frameInterval) {
-      newDrawFrame()  
-      lastDrawTimeRef.current = now; 
-    }
-  
-}, [currentTime, clips]);
-
-
-
-
-const lastUpdateRef = useRef<number>(0); 
-
-const currentTimeRef = useRef(0);
-
-
-
-*/
-
-
-
-
 
 
 //const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2324,13 +2203,16 @@ useEffect(() => {
   });
 
 
-  if (wannacutSettings.gpu) {
+ /* if (wannacutSettings.gpu) {
     renderer.setPixelRatio(window.devicePixelRatio);
     console.log(`🎮 GPU ativa: ${wannacutSettings.gpu}`);
   } else {
     renderer.setPixelRatio(1); // sem GPU: poupa processamento
     console.log('🖥️ Renderizando via software (sem GPU selecionada)');
-  }
+  }*/
+
+     renderer.setPixelRatio(1); // sem GPU: poupa processamento
+    console.log('🖥️ Renderizando via software (sem GPU selecionada)');
 
 
   renderer.setSize(projectConfig.width, projectConfig.height, false);
@@ -2374,6 +2256,8 @@ useEffect(() => {
 }, [projectConfig.width, projectConfig.height]);
 
 
+/*
+
 
 useEffect(() => {
   if (!rendererRef.current) return;
@@ -2386,6 +2270,9 @@ useEffect(() => {
   }
 }, [wannacutSettings.gpu]);
 
+
+
+*/
 
 const newDrawFrame = async (time:number | null = null, audios: any| null = null) => 
 {
@@ -2425,7 +2312,7 @@ useEffect( () => {
 
 
 const lastDrawTimeRef = useRef<number>(0);
-const FPS_target = 10;
+const FPS_target =  20 //projectConfig.fps ? projectConfig.fps : 24;
 const frameInterval = 1000 / FPS_target; // 100ms
 
 useEffect(() => {
@@ -5188,8 +5075,19 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
   if (transitionDataRaw) {
     try {
       const data = JSON.parse(transitionDataRaw);
-      const rect = e.currentTarget.getBoundingClientRect();
-      const dropTime = (e.clientX - rect.left) / pixelsPerSecond;
+      const rect = timelineContainerRef.current!.getBoundingClientRect();
+      const scrollLeft = timelineContainerRef.current?.scrollLeft || 0;
+      const x = e.clientX - rect.left;
+      
+
+      const calib2 = 2*(pixelsPerSecond - 10)/10
+      const calib = 20/calib2 
+      const dropTime = Math.max(0, ((x + scrollLeft) / pixelsPerSecond)- calib - 3);
+
+
+
+      
+      alert(dropTime)
 
       // Clips nessa track ordenados por start
       const trackClips = clips
@@ -5203,6 +5101,8 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
       let foundRight: Clip | null = null;
       let junctionTime = 0;
 
+      /*
+      
       for (let i = 0; i < trackClips.length - 1; i++) {
         const clipA = trackClips[i];
         const clipB = trackClips[i + 1];
@@ -5228,6 +5128,40 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
 
 
       }
+      
+      
+      */
+
+
+      for (let i = 0; i < trackClips.length - 1; i++) 
+      {
+        const clipA = trackClips[i];
+        const clipB = trackClips[i + 1];
+        
+        if((clipA.start <=  dropTime) && (clipB.start >= dropTime) )
+        {
+          foundLeft = clipA;
+          foundRight = clipB;
+          const endA = clipA.start + clipA.duration;
+          const startB = clipB.start;
+          const gap = startB - endA;
+  
+          if (gap > MAX_JUNCTION_GAP) 
+          {
+            foundLeft = null;
+            foundRight = null;          
+            break;
+          }  
+
+          const junction = (endA + startB) / 2;
+          junctionTime = endA; // usar o fim do clip esquerdo como ponto de referência
+          console.log('variaveis pra trasition', dropTime ,clipA, clipB, endA, junction)
+          break;
+        }  
+
+
+      }
+
 
 
       if (!foundLeft || !foundRight) {
@@ -5283,8 +5217,13 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
 
   saveHistory(clips, assets, tracks);
 
+  console.log('dados chegaram', e)
+
   // --- CASE 1: DROP FROM SIDEBAR (New Assets or Fonts) ---
   if (!isTimelineClip) {
+
+    console.log('chegou case 1')
+
     const assetName = e.dataTransfer.getData("assetName") || dragData.name;
     const fontPath = e.dataTransfer.getData("fontPath"); // From handleDragStartText
     
@@ -5347,6 +5286,8 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
   
   // --- CASE 2: MOVING EXISTING CLIPS ON TIMELINE ---
   else if (isTimelineClip && selectedClipIds.length > 0) {
+
+    console.log('chegou case 2')
     const timeOffset = dropTime - anchorStart;
     const anchorClip = clips.find(c => c.id === deleteClipId);
     const trackOffset = anchorClip ? trackId - anchorClip.trackId : 0;
@@ -6273,7 +6214,7 @@ return (
               alt="WannaCut Logo" 
               className="w-10 h-10 object-contain" // Mesmas dimensões do div antigo
             />
-            <h1 className="text-lg text-white"> Wanna <span className='font-bold'>Cut</span> <span className="text-zinc-500 font-light text-sm not-italic">MANAGER</span></h1>
+            <h1 className="text-lg text-white m-0 b-0"> Wanna<span className='font-bold m-0 b-0'>Cut</span> <span className="text-zinc-500 font-light text-sm not-italic">  {t('header.managename')}</span></h1>
           </div>
 
 
@@ -6470,7 +6411,7 @@ return (
       
     ) : (
       <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
-        Select an asset to clip.
+        {t('main.selectasset')}
       </div>
     )}
 
@@ -6954,7 +6895,7 @@ return (
           <div className="h-10 border-b border-zinc-900 flex items-center px-4 justify-between bg-[#0e0e0e] shrink-0">
             <div className="flex items-center gap-6">
               <button onClick={handleSplit} className="flex items-center gap-2 text-[10px] font-black text-zinc-500 hover:text-red-500 uppercase transition-colors">
-                <Scissors size={14}/> Split (S)
+                <Scissors size={14}/> {t('timeline.split')}
               </button>
               
               <button 
@@ -7055,11 +6996,12 @@ return (
     
     <div 
       className="flex-1 relative h-8 border-b border-white/5 cursor-pointer overflow-hidden"
-      onMouseDown={(e) => {
+      onClick={(e) => {
+
         const rect = e.currentTarget.getBoundingClientRect();
         //const scrollLeft = timelineContainerRef.current?.scrollLeft || 0;
         const newPos = e.clientX   - rect.left  - (pixelsPerSecond/20); //calibration
-        currentTimeRef.current = playheadPos/pixelsPerSecond
+        currentTimeRef.current = newPos/pixelsPerSecond
         seekTo(currentTimeRef.current);
         setPlayheadPos(newPos);
         
@@ -7147,7 +7089,7 @@ return (
           
           <div className="flex flex-col min-w-0">
             <span className="text-[9px] font-black text-white/70 uppercase tracking-tighter truncate">
-              {track.type} Track
+              {t(`timeline.trackTypes.${track.type}`)} 
             </span>
             <span className="text-[7px] font-bold text-zinc-600 uppercase">
               ID: {track.id + 1}
@@ -7305,6 +7247,11 @@ return (
 
 
 
+
+
+      
+
+
           {/* Clips filtrados por track.id */}
           {clips.filter(c => Number(c.trackId) === Number(track.id)).map((clip) => {
             
@@ -7352,7 +7299,7 @@ return (
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                e.stopPropagation(); // Importante para não propagar para a timeline pai
+                
 
                 // Em vez de olhar os types, tente ler o conteúdo diretamente
                 const transitionData = e.dataTransfer.types.includes('application/wannacut-transition');
@@ -7361,8 +7308,11 @@ return (
                 console.log('Drop detectado!', { transitionData, effectData });
 
                 if (transitionData) {
+                  e.stopPropagation(); // Importante para não propagar para a timeline pai
+                  alert(clip.trackId)
                   handleDropOnTimeline(e, clip.trackId);
                 } else if (effectData) {
+                  e.stopPropagation(); // Importante para não propagar para a timeline pai
                   handleDropOnClip(e, clip.id);
                 }
               }}
@@ -7451,19 +7401,52 @@ return (
                       >
                         {/* Opção: Separate/Recover Audio (Apenas Vídeo) */}
 
+                        {contextMenu?.type === 'video' && 
+                        (
+
+                          <>
+
+                          
+                          
+                          <button 
+                              onClick={() => {
+                                
+                                setClips( prev => prev.map(c => (c.id === clip.id) ?  {...c, mute: !(clip.mute)}  : c ))
+                                setContextMenu(null);
+                                !(clip.mute) ? showNotify(t('timeline.notify.muted'),'success') : showNotify(t('timeline.notify.unmuted'),'success')
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                            >
+                              {!(clip.mute) ?  <VolumeOff size={14} className="opacity-70" /> :  <VolumeIcon size={14} className="opacity-70" />}
+                               <span>{!(clip.mute) ? t('timeline.mute') : t('timeline.unmute')}</span>
+                              
+                             
+                              
+                          </button>
+
+                          
+                          
+                          
+                          </>
+                        )}
+
+
+
+
                         {(contextMenu?.type === 'video' || contextMenu?.type === 'image') && ( 
                           
                           <>
 
                           <button 
                               onClick={() => {
-                                setcopiedMask(contextMenu.clip)
+                                setcopiedMask(contextMenu.clip);
+                                setContextMenu(null);
                               }}
                               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                             >
                               <Copy size={14} className="opacity-70" />
-                              <span> Copy Mask </span>
-                            </button>
+                              <span> {t('timeline.copyMask')} </span>
+                          </button>
 
 
                             {
@@ -7471,7 +7454,8 @@ return (
 
                                 <button 
                                   onClick={() => {
-                                    pasteMask(contextMenu.clip)
+                                    pasteMask(contextMenu.clip);
+                                    setContextMenu(null);
                                   }}
                                   className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                                 >
@@ -7484,12 +7468,13 @@ return (
 
                             <button 
                               onClick={() => {
-                                setcopiedEffects(contextMenu.clip)
+                                setcopiedEffects(contextMenu.clip);
+                                setContextMenu(null);
                               }}
                               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                             >
                               <Copy size={14} className="opacity-70" />
-                              <span> Copy Effects </span>
+                              <span> {t('timeline.copyEffects')} </span>
                             </button>
 
 
@@ -7498,12 +7483,14 @@ return (
 
                                 <button 
                                   onClick={() => {
-                                    pasteEffects(contextMenu.clip)
+                                    pasteEffects(contextMenu.clip);
+                                    setContextMenu(null);
+
                                   }}
                                   className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                                 >
                                   <ClipboardPaste size={14} className="opacity-70" />
-                                  <span> Paste Effects and Fades </span>
+                                  <span> {t('timeline.pasteEffectsKeyframes')} </span>
                                 </button>
                             }
 
@@ -7579,7 +7566,7 @@ return (
                               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
                             >
                               <Music size={14} className="opacity-70" />
-                              <span>{contextMenu?.clip.mute ? 'Recover Audio' : 'Separate Audio'}</span>
+                              <span>{contextMenu?.clip.mute ? `${t('timeline.recoverAudio')}` : `${t('timeline.separateAudio')}` } </span>
                             </button>
 
 
@@ -8026,7 +8013,7 @@ return (
     ))}
 
 
-      {/* ── TIMELINE TRANSITION OVERLAYS ──────────────────────────────────────── */}
+    {/* ── TIMELINE TRANSITION OVERLAYS ──────────────────────────────────────── */}
       {timelineTransitions.map(trans => {
         const trackIndex = tracks.findIndex(t => t.id === trans.trackId);
         if (trackIndex === -1) return null;
@@ -8049,14 +8036,19 @@ return (
         const TRACK_HEIGHT = 64;
         const TRACK_GAP = 4;
         const RULER_H = 32;
-        const top = RULER_H + trackIndex * (TRACK_HEIGHT + TRACK_GAP) + 20;
+        const ids_order = order_tracks().map(t => t.id);
 
-        console.log('transitions: ', trans.junctionTime )
+        
+        const top = RULER_H + ids_order.indexOf(trans.trackId) * (TRACK_HEIGHT + TRACK_GAP) + 20;
+
+
+
+        //console.log('transitions: ', trans.junctionTime, top, ids_order.indexOf(track.id) )
 
         return (
           <div
             key={trans.id}
-            className="absolute z-[55]"
+            className="absolute z-[55] test-trans"
             style={{ top, left, width, height: TRACK_HEIGHT - 4 }}
           >
             <div className="absolute inset-0 rounded-md bg-blue-500/20 border border-blue-400/60 pointer-events-none" />
@@ -8093,6 +8085,10 @@ return (
           </div>
         );
       })}
+
+
+
+      
       {/* ────────────────────────────────────────────────────────────────────────── */}
 
        {isBoxSelecting && (
@@ -8120,7 +8116,7 @@ return (
         className="mb-[200px] h-8 mt-2 w-fit flex items-center gap-2 text-[9px] font-black text-zinc-700 hover:text-zinc-400 uppercase tracking-widest transition-colors px-3 py-2 border border-dashed border-zinc-800/50 rounded-md"
         
       >
-        <Plus size={10} /> Add Track
+        <Plus size={10} /> {t('timeline.addtrack')}
       </button>
 
 
@@ -8278,7 +8274,7 @@ return (
             <div className="relative mb-4">
               <button disabled={isDownloading} onClick={handleYoutubeDownload}
                 className={`relative w-full py-4 rounded-xl font-black text-xs text-white overflow-hidden ${isDownloading ? 'bg-zinc-800' : 'bg-rose-700 hover:bg-rose-800'}`}>
-                {isDownloading ? `DOWNLOADING... ${DownloadYTprogress}%` : "FETCH MEDIA"}
+                {isDownloading ? `${t('ytDownload.downloading')} ${DownloadYTprogress}%` : t('ytDownload.fetchMedia')}
 
                 {DownloadYTprogress > 0 && (
                   <div className="absolute bottom-0 left-0 w-full h-[2px] bg-zinc-900">

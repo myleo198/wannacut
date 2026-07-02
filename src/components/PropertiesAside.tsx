@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   Diamond, DiamondPlus, Video, Volume2, Type, Settings2, 
   Wind, Layers, ChevronDown, Sparkles, X,
@@ -13,17 +14,7 @@ import {converterSpeed, reverterSpeed, convertDB, convertZoom} from '@/App'
 const useEditableValue = (interpolatedValue: number, onUpdate: (val: number) => void, type: null | string = null) => {
   const [localValue, setLocalValue] = useState(interpolatedValue);
 
-  // Sincroniza o estado local quando a timeline se move
   useEffect(() => {
-
-/*
-
-    interpolatedValue = type === 'speed' ? converterSpeed(interpolatedValue) : 
-       type=== 'volume' ? convertDB(interpolatedValue) : 
-     type === 'zoom' ? convertZoom(interpolatedValue) : interpolatedValue;
-
-*/
-
     setLocalValue(interpolatedValue);
   }, [interpolatedValue]);
 
@@ -32,8 +23,6 @@ const useEditableValue = (interpolatedValue: number, onUpdate: (val: number) => 
     if (!isNaN(val)) onUpdate(val);
     if (e.key === 'Enter') e.currentTarget.blur();
   };
-
-  
 
   return { localValue, setLocalValue, handleBlurOrEnter };
 };
@@ -77,28 +66,15 @@ interface PropertiesAsideProps {
   availableFonts: string [];
   removeEffectFromClip: void;
   isRendering: boolean;
-  
 }
-
-
-
 
 
 // ---------------------------------------------------------------------------
 // MASK SECTION
 // ---------------------------------------------------------------------------
 
-const MASK_TYPES = [
-  { value: 'none',      label: 'None'      },
-  { value: 'linear',    label: 'Linear'    },
-  { value: 'radial',    label: 'Radial'    },
-  { value: 'rectangle', label: 'Rectangle' },
-  { value: 'heart',     label: 'Heart'     },
-  { value: 'star',      label: 'Star'      },
-   { value: 'trailer',   label: 'Trailer'   },
-] as const;
-
-type MaskType = typeof MASK_TYPES[number]['value'];
+const MASK_TYPES_VALUES = ['none', 'linear', 'radial', 'rectangle', 'heart', 'star', 'trailer'] as const;
+type MaskType = typeof MASK_TYPES_VALUES[number];
 
 const DEFAULT_MASK = {
   type:         'none' as MaskType,
@@ -136,8 +112,19 @@ const MaskSlider = ({
 );
 
 const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; activeHex: string }) => {
+  const { t } = useTranslation();
   const mask = clip.mask || DEFAULT_MASK;
   const maskType: MaskType = mask.type || 'none';
+
+  const MASK_TYPES = [
+    { value: 'none',      label: t('properties.mask.none')      },
+    { value: 'linear',    label: t('properties.mask.linear')    },
+    { value: 'radial',    label: t('properties.mask.radial')    },
+    { value: 'rectangle', label: t('properties.mask.rectangle') },
+    { value: 'heart',     label: t('properties.mask.heart')     },
+    { value: 'star',      label: t('properties.mask.star')      },
+    { value: 'trailer',   label: t('properties.mask.trailer')   },
+  ];
 
   const update = (patch: Partial<typeof DEFAULT_MASK>) =>
     setClips((prev: any[]) =>
@@ -153,14 +140,13 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
   const hasAngle      = maskType === 'linear';
   const hasRotation   = maskType !== 'none' && maskType !== 'linear' && maskType !== 'trailer';
   const hasTrailer    = maskType === 'trailer';
- 
 
   return (
     <section className="mb-6 p-3 bg-white/5 rounded-lg border border-white/5">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4" style={{ color: '#38bdf8' }}>
         <Scissors size={12} />
-        <span className="text-[9px] font-bold uppercase tracking-widest">Mask</span>
+        <span className="text-[9px] font-bold uppercase tracking-widest">{t('properties.mask.title')}</span>
       </div>
 
       {/* Type selector grid */}
@@ -170,7 +156,7 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
           return (
             <button
               key={value}
-              onClick={() => update({ type: value })}
+              onClick={() => update({ type: value as MaskType })}
               className="py-1.5 rounded text-[9px] font-bold uppercase tracking-tight transition-all border"
               style={{
                 borderColor: active ? '#38bdf8' : 'rgba(255,255,255,0.07)',
@@ -186,19 +172,17 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
 
       {maskType !== 'none' && (
         <div>
-          {/* Linear angle */}
           {hasAngle && (
-            <MaskSlider label="Angle" value={mask.rotation ?? 0} min={0} max={360} unit="°"
+            <MaskSlider label={t('properties.mask.angle')} value={mask.rotation ?? 0} min={0} max={360} unit="°"
               onChange={(v) => update({ rotation: v })} />
           )}
 
-          {/* Position X / Y */}
           {hasPosition && (
             <div className="grid grid-cols-2 gap-2 mb-3">
               {(['x', 'y'] as const).map((axis) => (
                 <div key={axis}>
                   <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter block mb-1">
-                    Position {axis.toUpperCase()}
+                    {t('properties.mask.position')} {axis.toUpperCase()}
                   </span>
                   <input
                     type="number"
@@ -211,52 +195,46 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
             </div>
           )}
 
-          {/* Scale X / Y (radial ellipse) */}
           {hasScaleXY && (
             <>
-              <MaskSlider label="Scale X" value={mask.scaleX ?? 1} min={0.05} max={3} step={0.01}
+              <MaskSlider label={t('properties.mask.scaleX')} value={mask.scaleX ?? 1} min={0.05} max={3} step={0.01}
                 onChange={(v) => update({ scaleX: v })} />
-              <MaskSlider label="Scale Y" value={mask.scaleY ?? 1} min={0.05} max={3} step={0.01}
+              <MaskSlider label={t('properties.mask.scaleY')} value={mask.scaleY ?? 1} min={0.05} max={3} step={0.01}
                 onChange={(v) => update({ scaleY: v })} />
             </>
           )}
 
-          {/* Uniform scale */}
           {hasScale && (
-            <MaskSlider label="Scale" value={mask.scaleX ?? 1} min={0.05} max={3} step={0.01}
+            <MaskSlider label={t('properties.mask.scale')} value={mask.scaleX ?? 1} min={0.05} max={3} step={0.01}
               onChange={(v) => update({ scaleX: v, scaleY: v })} />
           )}
 
-          {/* Rotation */}
           {hasRotation && (
-            <MaskSlider label="Rotation" value={mask.rotation ?? 0} min={0} max={360} unit="°"
+            <MaskSlider label={t('properties.mask.rotation')} value={mask.rotation ?? 0} min={0} max={360} unit="°"
               onChange={(v) => update({ rotation: v })} />
           )}
 
-          {/* Corner Radius (rectangle only) */}
           {hasCorner && (
-            <MaskSlider label="Corner Radius" value={mask.cornerRadius ?? 0} min={0} max={100} unit="%"
+            <MaskSlider label={t('properties.mask.cornerRadius')} value={mask.cornerRadius ?? 0} min={0} max={100} unit="%"
               onChange={(v) => update({ cornerRadius: v })} />
           )}
 
-          {/* Feather */}
           {hasFeather && (
-            <MaskSlider label="Feather" value={mask.feather ?? 0} min={0} max={100}
+            <MaskSlider label={t('properties.mask.feather')} value={mask.feather ?? 0} min={0} max={100}
               onChange={(v) => update({ feather: v })} />
           )}
-
 
           {hasTrailer && (
             <>
               <MaskSlider
-                label="Bar Size"
+                label={t('properties.mask.barSize')}
                 value={mask.scaleY ?? 0.15}
                 min={0} max={0.45} step={0.01}
                 onChange={(v) => update({ scaleY: v })}
               />
               <div className="mb-3">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">Center</span>
+                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">{t('properties.mask.center')}</span>
                   <span className="text-[9px] font-mono text-zinc-300">{(mask.y ?? 0).toFixed(0)}px</span>
                 </div>
                 <input
@@ -265,21 +243,14 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
                   value={mask.y ?? 0}
                   onChange={(e) => update({ y: parseFloat(e.target.value) || 0 })}
                 />
-                <p className="text-[9px] text-zinc-600 mt-1 italic">View only · use keyframes to animate</p>
+                <p className="text-[9px] text-zinc-600 mt-1 italic">{t('properties.mask.viewOnlyKeyframes')}</p>
               </div>
             </>
           )}
- 
-          {/* Feather */}
-          {hasFeather && (
-            <MaskSlider label="Feather" value={mask.feather ?? 0} min={0} max={100}
-              onChange={(v) => update({ feather: v })} />
-          )}
 
-          {/* Invert toggle */}
           {hasInvert && (
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
-              <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">Invert Mask</span>
+              <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">{t('properties.mask.invertMask')}</span>
               <label className="relative flex items-center cursor-pointer">
                 <input
                   type="checkbox"
@@ -301,62 +272,60 @@ const MaskSection = ({ clip, setClips, activeHex }: { clip: any; setClips: any; 
   );
 };
 
-// Seção de Ajustes Básicos (Transform, Opacity, etc.)
+// ---------------------------------------------------------------------------
+// BASIC SECTION
+// ---------------------------------------------------------------------------
+
 const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posXState, posYState, zoomState, isZoomKNow, updateKeyframes, selectedClip, availableFonts, 
   fontSizeState, setClips, resolveColor, bgDimXState, bgDimYState, COLOR_PALETTE, opacState, isOpacityKNow, rot2dState, rot3dState, volumeState, isVolumeKNow,
   speedState, isSpeedKNow, isPositionKNow
- }) => (
+}) => {
+  const { t } = useTranslation();
+  return (
   <div className="space-y-4">
     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
         {/* SECTION: BASIC */}
         <section>
           <div className="flex items-center gap-2 mb-4" style={{ color: activeHex }}>
             <Settings2 size={12} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Basic</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">{t('properties.basic')}</span>
           </div>
-          
 
-        {isText && (
-  <PropertyRow label="Text" keyframable={false}>
-    <div className="flex items-center gap-2 w-full">
-      <textarea 
-        className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono min-h-[50px] resize-y custom-scrollbar leading-relaxed"
-        value={clip.name}
-        onChange={(e) => 
-          setClips(prev => 
-            prev.map(c => c.id === selectedClip.id ? { ...c, name: e.target.value } : c)
-          )
-        }
-        onKeyDown={(e) => {
-          // Garante que o Enter insira a quebra de linha normal e pare qualquer comportamento do Tauri
-          if (e.key === 'Enter') {
-            e.stopPropagation(); 
-          }
-        }}
-        rows={3}
-      />
-    </div>
-  </PropertyRow>
-)}
+          {isText && (
+            <PropertyRow label={t('properties.text')} keyframable={false}>
+              <div className="flex items-center gap-2 w-full">
+                <textarea 
+                  className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono min-h-[50px] resize-y custom-scrollbar leading-relaxed"
+                  value={clip.name}
+                  onChange={(e) => 
+                    setClips(prev => 
+                      prev.map(c => c.id === selectedClip.id ? { ...c, name: e.target.value } : c)
+                    )
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.stopPropagation(); 
+                    }
+                  }}
+                  rows={3}
+                />
+              </div>
+            </PropertyRow>
+          )}
+
           {(isVideo || isText || isImage) && (
             <>
-
-            {/*POSITION */}
-
-              {/* Captura os valores atuais via interpolação para exibir no input */}
-
-            <div className="grid grid-cols-2 gap-2">
-              <PropertyRow label="Position X" activeColor={activeHex} keyframeNow={isPositionKNow}>
-                <input 
-                  type="number" 
-                  min="-4000"
-                  max="4000"
-                  value={posXState.localValue}
-                 onChange={(e) => {
+              <div className="grid grid-cols-2 gap-2">
+                <PropertyRow label={t('properties.positionX')} activeColor={activeHex} keyframeNow={isPositionKNow}>
+                  <input 
+                    type="number" 
+                    min="-4000"
+                    max="4000"
+                    value={posXState.localValue}
+                    onChange={(e) => {
                       const val = e.target.value;
-                      // Se for apenas o sinal de menos ou estiver vazio, permite atualizar o estado como string
                       if (val === '-' || val === '') {
-                        posXState.setLocalValue(val as any); // Força a string temporária para não quebrar a tipagem
+                        posXState.setLocalValue(val as any);
                       } else {
                         const parsed = parseFloat(val);
                         if (!isNaN(parsed)) {
@@ -364,74 +333,69 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                         }
                       }
                     }}
-                  onBlur={posXState.handleBlurOrEnter}
-                  onKeyDown={(e) => e.key === 'Enter' && posXState.handleBlurOrEnter(e)}
-                  className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all" 
-                />
-              </PropertyRow>
+                    onBlur={posXState.handleBlurOrEnter}
+                    onKeyDown={(e) => e.key === 'Enter' && posXState.handleBlurOrEnter(e)}
+                    className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all" 
+                  />
+                </PropertyRow>
 
-              <PropertyRow label="Position Y" activeColor={activeHex} keyframeNow={isPositionKNow}>
-                <input 
-                  type="number" 
-                  min="-4000"
-                  max="4000"
-                  value={posYState.localValue}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    // Se for apenas o sinal de menos ou estiver vazio, permite atualizar o estado como string
-                    if (val === '-' || val === '') {
-                      posYState.setLocalValue(val as any); // Força a string temporária para não quebrar a tipagem
-                    } else {
-                      const parsed = parseFloat(val);
-                      if (!isNaN(parsed)) {
-                        posYState.setLocalValue(parsed);
+                <PropertyRow label={t('properties.positionY')} activeColor={activeHex} keyframeNow={isPositionKNow}>
+                  <input 
+                    type="number" 
+                    min="-4000"
+                    max="4000"
+                    value={posYState.localValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '-' || val === '') {
+                        posYState.setLocalValue(val as any);
+                      } else {
+                        const parsed = parseFloat(val);
+                        if (!isNaN(parsed)) {
+                          posYState.setLocalValue(parsed);
+                        }
                       }
-                    }
+                    }}
+                    onBlur={posYState.handleBlurOrEnter}
+                    onKeyDown={(e) => e.key === 'Enter' && posXState.handleBlurOrEnter(e)}
+                    className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all" 
+                  />
+                </PropertyRow>
+              </div>
+             
+              <PropertyRow 
+                label={
+                  <div className="flex justify-between items-center w-full pr-2">
+                    <span className="text-zinc-500">{t('properties.zoom')}</span>
+                    <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-16">
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        className="w-full bg-transparent text-[9px] font-mono text-white outline-none pr-1 py-0.5"
+                        style={{ color: activeHex }}
+                        value={zoomState.localValue.toFixed(2)}
+                        onChange={(e) => zoomState.setLocalValue(parseFloat(e.target.value))}
+                        onBlur={zoomState.handleBlurOrEnter}
+                        onKeyDown={(e) => e.key === 'Enter' && zoomState.handleBlurOrEnter(e)}
+                      />
+                      <span className="text-[8px] text-zinc-500 pr-1">x</span>
+                    </div>
+                  </div>
+                } 
+                activeColor={activeHex}
+                keyframeNow={isZoomKNow}
+              >
+                <input 
+                  type="range" min="0.1" max="5" step="0.01" className="w-full cursor-pointer"
+                  value={zoomState.localValue}
+                  style={{ accentColor: activeHex }} 
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    zoomState.setLocalValue(v);
+                    updateKeyframes(selectedClip, 'zoom', v);
                   }}
-                  onBlur={posYState.handleBlurOrEnter}
-                  onKeyDown={(e) => e.key === 'Enter' && posXState.handleBlurOrEnter(e)}
-                  
-                  className="w-full bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all" 
                 />
               </PropertyRow>
-            </div>
-             
-             {/*ZOOM */}
-             <PropertyRow 
-              label={
-                <div className="flex justify-between items-center w-full pr-2">
-                  <span className="text-zinc-500">Scale / Zoom</span>
-                  
-                  {/* Container com largura fixa para não dançar na tela */}
-                  <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-16">
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      className="w-full bg-transparent text-[9px] font-mono text-white outline-none pr-1 py-0.5"
-                      style={{ color: activeHex }}
-                      value={zoomState.localValue.toFixed(2)}
-                      onChange={(e) => zoomState.setLocalValue(parseFloat(e.target.value))}
-                      onBlur={zoomState.handleBlurOrEnter}
-                      onKeyDown={(e) => e.key === 'Enter' && zoomState.handleBlurOrEnter(e)}
-                    />
-                    <span className="text-[8px] text-zinc-500 pr-1">x</span>
-                  </div>
-                </div>
-              } 
-              activeColor={activeHex}
-              keyframeNow={isZoomKNow}
-            >
-              <input 
-                type="range" min="0.1" max="5" step="0.01" className="w-full cursor-pointer"
-                value={zoomState.localValue}
-               style={{ accentColor: activeHex }} 
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  zoomState.setLocalValue(v);
-                  updateKeyframes(selectedClip, 'zoom', v);
-                }}
-              />
-            </PropertyRow>
             </>
           )}
 
@@ -439,35 +403,32 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
             <section className="mb-6 p-3 bg-white/5 rounded-lg border border-white/5">
               <div className="flex items-center gap-2 mb-4 text-amber-500">
                 <Type size={12} />
-                <span className="text-[9px] font-bold uppercase tracking-widest">Typography</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest">{t('properties.typography')}</span>
               </div>
 
-              <PropertyRow label="Font Family" keyframable={false}>
+              <PropertyRow label={t('properties.fontFamily')} keyframable={false}>
                 <div className="relative w-full group">
-
                   <select 
                     className="w-full appearance-none border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none"
                     value={selectedClip.font}
                     onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, font: e.target.value} : c))}
                   >
-                    {availableFonts.map( a =>
-                  
-                      <option value={a.split(/[\\/]/).pop()?.split('.')[0] || "Font" } className="bg-[#090909] text-white" > {a.split(/[\\/]/).pop()?.split('.')[0] || "Font" } </option>
+                    {availableFonts.map(a =>
+                      <option key={a} value={a.split(/[\\/]/).pop()?.split('.')[0] || "Font"} className="bg-[#090909] text-white">
+                        {a.split(/[\\/]/).pop()?.split('.')[0] || "Font"}
+                      </option>
                     )}
                   </select>
-
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 group-hover:text-zinc-300 transition-colors">
                     <ChevronDown size={10} strokeWidth={3} />
                   </div>
                 </div>
               </PropertyRow>
 
-
-
               <PropertyRow 
                 label={
                   <div className="flex justify-between items-center w-full pr-2">
-                    <span>Font Size</span>
+                    <span>{t('properties.fontSize')}</span>
                     <div className="flex items-center bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
                       <input 
                         type="number" 
@@ -481,7 +442,7 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                     </div>
                   </div>
                 } 
-                keyframable={false} // Ajuste conforme sua lógica de keyframes para texto
+                keyframable={false}
               >
                 <input 
                   type="range" 
@@ -492,7 +453,6 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                   onChange={(e) => {
                     const v = Number(e.target.value);
                     fontSizeState.setLocalValue(v);
-                    // Atualização imediata para o Range
                     setClips(prev => prev.map(c => 
                       c.id === selectedClip.id ? { ...c, font_size: v } : c
                     ));
@@ -500,151 +460,136 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 />
               </PropertyRow>
 
-                {/* TEXT ALIGN */}
-                <PropertyRow label="Text Align" keyframable={false}>
-                  <div className="grid grid-cols-3 gap-1">
-                    {([
-                      { value: 'left',   icon: <AlignLeft   size={12} /> },
-                      { value: 'center', icon: <AlignCenter size={12} /> },
-                      { value: 'right',  icon: <AlignRight  size={12} /> },
-                    ] as const).map(({ value, icon }) => {
-                      const active = (selectedClip.text_align || 'left') === value;
-                      return (
-                        <button
-                          key={value}
-                          onClick={() =>
-                            setClips((prev: any[]) =>
-                              prev.map(c =>
-                                c.id === selectedClip.id ? { ...c, text_align: value } : c
-                              )
+              <PropertyRow label={t('properties.textAlign')} keyframable={false}>
+                <div className="grid grid-cols-3 gap-1">
+                  {([
+                    { value: 'left',   icon: <AlignLeft   size={12} /> },
+                    { value: 'center', icon: <AlignCenter size={12} /> },
+                    { value: 'right',  icon: <AlignRight  size={12} /> },
+                  ] as const).map(({ value, icon }) => {
+                    const active = (selectedClip.text_align || 'left') === value;
+                    return (
+                      <button
+                        key={value}
+                        onClick={() =>
+                          setClips((prev: any[]) =>
+                            prev.map(c =>
+                              c.id === selectedClip.id ? { ...c, text_align: value } : c
                             )
-                          }
-                          className="flex items-center justify-center py-1.5 rounded border transition-all"
-                          style={{
-                            borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.07)',
-                            background:  active ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
-                            color:       active ? '#f59e0b' : '#71717a',
-                          }}
-                          title={value.charAt(0).toUpperCase() + value.slice(1)}
-                        >
-                          {icon}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PropertyRow>
+                          )
+                        }
+                        className="flex items-center justify-center py-1.5 rounded border transition-all"
+                        style={{
+                          borderColor: active ? '#f59e0b' : 'rgba(255,255,255,0.07)',
+                          background:  active ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
+                          color:       active ? '#f59e0b' : '#71717a',
+                        }}
+                        title={value.charAt(0).toUpperCase() + value.slice(1)}
+                      >
+                        {icon}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PropertyRow>
 
-                {/* FONT COLOR (Standard) */}
-                <PropertyRow label="Font Color" keyframable={false}>
-                  <div className="flex items-center gap-2">
-                    <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer">
-                      <div className="w-full h-full" style={{ backgroundColor: resolveColor(selectedClip.font_color) }} />
-                      <input 
-                        type="color"
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                        value={resolveColor(selectedClip.font_color).startsWith('#') ? resolveColor(selectedClip.font_color) : '#ffffff'}
-                        onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_color: e.target.value } : c))}
-                      />
-                    </div>
+              <PropertyRow label={t('properties.fontColor')} keyframable={false}>
+                <div className="flex items-center gap-2">
+                  <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer">
+                    <div className="w-full h-full" style={{ backgroundColor: resolveColor(selectedClip.font_color) }} />
+                    <input 
+                      type="color"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      value={resolveColor(selectedClip.font_color).startsWith('#') ? resolveColor(selectedClip.font_color) : '#ffffff'}
+                      onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_color: e.target.value } : c))}
+                    />
+                  </div>
+                  <input 
+                    list="color-options"
+                    type="text"
+                    className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
+                    value={selectedClip.font_color || ''}
+                    onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_color: e.target.value } : c))}
+                  />
+                </div>
+              </PropertyRow>
+
+              <PropertyRow label={t('properties.textBgColor')} keyframable={false}>
+                <div className="flex items-center gap-2">
+                  <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer checkerboard-bg group">
+                    <div 
+                      className="w-full h-full transition-colors" 
+                      style={{ backgroundColor: resolveColor(selectedClip.font_bgcolor) }} 
+                    />
+                    <input 
+                      type="color"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      disabled={selectedClip.font_bgcolor === 'transparent'}
+                      value={resolveColor(selectedClip.font_bgcolor).startsWith('#') ? resolveColor(selectedClip.font_bgcolor) : '#000000'}
+                      onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_bgcolor: e.target.value } : c))}
+                    />
+                  </div>
+                  <div className="flex-1 relative flex items-center gap-1">
                     <input 
                       list="color-options"
                       type="text"
                       className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
-                      value={selectedClip.font_color || ''}
-                      onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_color: e.target.value } : c))}
+                      placeholder="transparent, #hex, name..."
+                      value={selectedClip.font_bgcolor || 'transparent'}
+                      onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_bgcolor: e.target.value } : c))}
                     />
+                    <button 
+                      onClick={() => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_bgcolor: 'transparent' } : c))}
+                      className="p-1 hover:bg-white/10 rounded text-zinc-500 hover:text-white transition-colors"
+                      title={t('properties.setTransparent')}
+                    >
+                      <Wind size={12} />
+                    </button>
                   </div>
-                </PropertyRow>
-
-                {/* BACKGROUND COLOR (With Transparent Support) */}
-                <PropertyRow label="Text BG Color" keyframable={false}>
-                  <div className="flex items-center gap-2">
-                    {/* Checkerboard preview for transparency */}
-                    <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer checkerboard-bg group">
-                      <div 
-                        className="w-full h-full transition-colors" 
-                        style={{ backgroundColor: resolveColor(selectedClip.font_bgcolor) }} 
-                      />
-                      <input 
-                        type="color"
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                        disabled={selectedClip.font_bgcolor === 'transparent'}
-                        value={resolveColor(selectedClip.font_bgcolor).startsWith('#') ? resolveColor(selectedClip.font_bgcolor) : '#000000'}
-                        onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_bgcolor: e.target.value } : c))}
-                      />
-                      {/* Quick toggle to transparency if user clicks a small corner or similar logic */}
-                    </div>
-
-                    <div className="flex-1 relative flex items-center gap-1">
-                      <input 
-                        list="color-options"
-                        type="text"
-                        className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
-                        placeholder="transparent, #hex, name..."
-                        value={selectedClip.font_bgcolor || 'transparent'}
-                        onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_bgcolor: e.target.value } : c))}
-                      />
-                      {/* Transparent Reset Button */}
-                      <button 
-                        onClick={() => setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, font_bgcolor: 'transparent' } : c))}
-                        className="p-1 hover:bg-white/10 rounded text-zinc-500 hover:text-white transition-colors"
-                        title="Set to transparent"
-                      >
-                        <Wind size={12} /> {/* Using Wind as a "clear/air" metaphor or use a 'X' icon */}
-                      </button>
-                    </div>
-                  </div>
-                </PropertyRow>
-
-                {/* Shared Datalist */}
-                <datalist id="color-options">
-                  {Object.keys(COLOR_PALETTE).map(name => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-
-                {/* BG DIMENSIONS */}
-                <div className="mt-4 border-t border-white/5 pt-4">
-                  <PropertyRow label="BG Size (W / H)" keyframable={false}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="flex items-center bg-white/5 border border-white/10 rounded px-2">
-                          <span className="text-[8px] text-zinc-600 font-bold mr-2 uppercase">W</span>
-                          <input type="number" className="bg-transparent w-full py-1 text-[10px] text-white outline-none font-mono text-right"
-                            value={Math.round(bgDimXState.localValue)}
-                            onChange={(e) => bgDimXState.setLocalValue(parseFloat(e.target.value))}
-                            onBlur={bgDimXState.handleBlurOrEnter}
-                            min="0"
-                            max="4000"
-                            
-                          />
-                        </div>
-                        <div className="flex items-center bg-white/5 border border-white/10 rounded px-2">
-                          <span className="text-[8px] text-zinc-600 font-bold mr-2 uppercase">H</span>
-                          <input type="number" className="bg-transparent w-full py-1 text-[10px] text-white outline-none font-mono text-right"
-                            value={Math.round(bgDimYState.localValue)}
-                            min="0"
-                            max="4000"
-                            onChange={(e) => bgDimYState.setLocalValue(parseFloat(e.target.value))}
-                            onBlur={bgDimYState.handleBlurOrEnter}
-                          />
-                        </div>
-                      </div>
-                  </PropertyRow>
                 </div>
-  
-  
+              </PropertyRow>
+
+              <datalist id="color-options">
+                {Object.keys(COLOR_PALETTE).map(name => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+
+              <div className="mt-4 border-t border-white/5 pt-4">
+                <PropertyRow label={t('properties.bgSizeWH')} keyframable={false}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center bg-white/5 border border-white/10 rounded px-2">
+                      <span className="text-[8px] text-zinc-600 font-bold mr-2 uppercase">W</span>
+                      <input type="number" className="bg-transparent w-full py-1 text-[10px] text-white outline-none font-mono text-right"
+                        value={Math.round(bgDimXState.localValue)}
+                        onChange={(e) => bgDimXState.setLocalValue(parseFloat(e.target.value))}
+                        onBlur={bgDimXState.handleBlurOrEnter}
+                        min="0"
+                        max="4000"
+                      />
+                    </div>
+                    <div className="flex items-center bg-white/5 border border-white/10 rounded px-2">
+                      <span className="text-[8px] text-zinc-600 font-bold mr-2 uppercase">H</span>
+                      <input type="number" className="bg-transparent w-full py-1 text-[10px] text-white outline-none font-mono text-right"
+                        value={Math.round(bgDimYState.localValue)}
+                        min="0"
+                        max="4000"
+                        onChange={(e) => bgDimYState.setLocalValue(parseFloat(e.target.value))}
+                        onBlur={bgDimYState.handleBlurOrEnter}
+                      />
+                    </div>
+                  </div>
+                </PropertyRow>
+              </div>
             </section>
           )}
 
-
-      {/* VOLUME */}
-      {(!isImage && !isText  ) && (
-
-
+          {/* VOLUME */}
+          {(!isImage && !isText) && (
             <PropertyRow 
               label={
                 <div className="flex justify-between items-center w-full pr-2">
-                  <span>Volume</span>
+                  <span>{t('properties.volume')}</span>
                   <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-20">
                     <input 
                       type="number" 
@@ -660,7 +605,7 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 </div>
               }
               activeColor={activeHex}
-              keyframeNow={isVolumeKNow} // Usando o booleano correto aqui
+              keyframeNow={isVolumeKNow}
             >
               <input 
                 type="range" min="-20" max="20" step="1" className="w-full cursor-pointer"
@@ -673,204 +618,188 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 }}
               />
             </PropertyRow>
+          )}
 
-
-      )}
-
-      {/* OPACITY */}
-      {(isVideo || isText || isImage) && (
-      <PropertyRow 
-          label={
-        <div className="flex justify-between items-center w-full pr-2">
-          <span>Opacity</span>
-          {/* O Input numérico agora vive aqui, substituindo o Span estático */}
-          <div className="relative flex items-center">
-            <input 
-              type="number" 
-              className="w-10 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-[9px] font-mono text-right outline-none focus:border-white/20 transition-colors"
-              style={{ color: activeHex }}
-              value={Math.round(opacState.localValue * 100)} // Exibe 0-100
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                opacState.setLocalValue(v / 100); // Converte de volta para 0-1
-              }}
-              onBlur={(e) => {
-                const v = parseFloat(e.currentTarget.value) / 100;
-                updateKeyframes(selectedClip, 'opacity', v);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const v = parseFloat(e.currentTarget.value) / 100;
-                  updateKeyframes(selectedClip, 'opacity', v);
-                  e.currentTarget.blur();
-                }
-              }}
-            />
-            <span className="text-[8px] ml-0.5 opacity-50">%</span>
-          </div>
-        </div>
-      } 
-      activeColor={activeHex} 
-      keyframeNow={isOpacityKNow}
-      >
-      <div className="flex items-center gap-3">
-        <input 
-          type="range" 
-          min="0" 
-          max="1" 
-          step="0.01" 
-          className="flex-1 accent-indigo-600"
-          value={opacState.localValue}
-          style={{ accentColor: activeHex }} 
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            opacState.setLocalValue(v);
-            updateKeyframes(selectedClip, 'opacity', v);
-          }}
-        />
-      </div>
-      </PropertyRow>
-      )}
-      
-      {/* SPEED */}
-      {(!isText && !isImage) && (
-        <PropertyRow
-          label="Speed"
-          activeColor={activeHex}
-          keyframable={true}
-          keyframeNow={isSpeedKNow}
-        >
-          <div className="flex items-center gap-3" 
-              
-          >
-            <Wind size={12} className="text-sky-400 shrink-0" color={activeHex} />
-            <input
-              type="range"
-              min={0.1}
-              max={10}
-              step={0.01}
-              value={speedState.localValue}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                speedState.setLocalValue(v);
-                updateKeyframes(selectedClip, 'speed', v);
-              }}
-              className="flex-1 accent-indigo-600"
-              style={{ accentColor: activeHex }} 
-            />
-            <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-16">
-
+          {/* OPACITY */}
+          {(isVideo || isText || isImage) && (
+            <PropertyRow 
+              label={
+                <div className="flex justify-between items-center w-full pr-2">
+                  <span>{t('properties.opacity')}</span>
+                  <div className="relative flex items-center">
+                    <input 
+                      type="number" 
+                      className="w-10 bg-white/5 border border-white/10 rounded px-1 py-0.5 text-[9px] font-mono text-right outline-none focus:border-white/20 transition-colors"
+                      style={{ color: activeHex }}
+                      value={Math.round(opacState.localValue * 100)}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        opacState.setLocalValue(v / 100);
+                      }}
+                      onBlur={(e) => {
+                        const v = parseFloat(e.currentTarget.value) / 100;
+                        updateKeyframes(selectedClip, 'opacity', v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const v = parseFloat(e.currentTarget.value) / 100;
+                          updateKeyframes(selectedClip, 'opacity', v);
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                    <span className="text-[8px] ml-0.5 opacity-50">%</span>
+                  </div>
+                </div>
+              } 
+              activeColor={activeHex} 
+              keyframeNow={isOpacityKNow}
+            >
+              <div className="flex items-center gap-3">
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="1" 
+                  step="0.01" 
+                  className="flex-1 accent-indigo-600"
+                  value={opacState.localValue}
+                  style={{ accentColor: activeHex }} 
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    opacState.setLocalValue(v);
+                    updateKeyframes(selectedClip, 'opacity', v);
+                  }}
+                />
+              </div>
+            </PropertyRow>
+          )}
+          
+          {/* SPEED */}
+          {(!isText && !isImage) && (
+            <PropertyRow
+              label={t('properties.speed')}
+              activeColor={activeHex}
+              keyframable={true}
+              keyframeNow={isSpeedKNow}
+            >
+              <div className="flex items-center gap-3">
+                <Wind size={12} className="text-sky-400 shrink-0" color={activeHex} />
                 <input
-                  type="number"
+                  type="range"
                   min={0.1}
                   max={10}
                   step={0.01}
-                  value={speedState.localValue.toFixed(2)}
-                  style={{ color: activeHex }} 
+                  value={speedState.localValue}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) speedState.setLocalValue(Math.max(0.1, Math.min(10, val)));
+                    const v = parseFloat(e.target.value);
+                    speedState.setLocalValue(v);
+                    updateKeyframes(selectedClip, 'speed', v);
                   }}
-                  onBlur={speedState.handleBlurOrEnter}
-                  onKeyDown={(e) => e.key === 'Enter' && speedState.handleBlurOrEnter(e)}
-                  className="w-full bg-transparent text-[9px] font-mono text-white outline-none pr-1 py-0.5"
-
+                  className="flex-1 accent-indigo-600"
+                  style={{ accentColor: activeHex }} 
                 />
-                <span className="text-[9px] text-zinc-500"> X </span>
-            </div>
+                <div className="flex items-center bg-white/5 border border-white/10 rounded px-1 w-16">
+                  <input
+                    type="number"
+                    min={0.1}
+                    max={10}
+                    step={0.01}
+                    value={speedState.localValue.toFixed(2)}
+                    style={{ color: activeHex }} 
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val)) speedState.setLocalValue(Math.max(0.1, Math.min(10, val)));
+                    }}
+                    onBlur={speedState.handleBlurOrEnter}
+                    onKeyDown={(e) => e.key === 'Enter' && speedState.handleBlurOrEnter(e)}
+                    className="w-full bg-transparent text-[9px] font-mono text-white outline-none pr-1 py-0.5"
+                  />
+                  <span className="text-[9px] text-zinc-500"> X </span>
+                </div>
+              </div>
+            </PropertyRow>
+          )}
+
+          {/* REVERSE */}
+          <div className="flex items-center justify-between px-1 mt-1">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{t('properties.reverse')}</span>
+            <label className="relative flex items-center gap-2 cursor-pointer select-none">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={selectedClip?.reverse === -1}
+                  onChange={(e) => {
+                    setClips(prev =>
+                      prev.map(c =>
+                        c.id === selectedClip.id
+                          ? { ...c, reverse: e.target.checked ? -1 : 1 }
+                          : c
+                      )
+                    );
+                  }}
+                />
+                <div
+                  className="w-8 h-4 rounded-full transition-colors duration-200 peer-checked:bg-indigo-600 bg-zinc-700 border border-white/10"
+                  style={{ ...(selectedClip?.reverse === -1 ? { backgroundColor: activeHex } : {}) }}
+                />
+                <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 peer-checked:translate-x-4" />
+              </div>
+              <span
+                className="text-[9px] font-black uppercase tracking-widest transition-colors"
+                style={{ color: selectedClip?.reverse === -1 ? activeHex : undefined }}
+              >
+                {selectedClip?.reverse === -1 ? t('properties.on') : t('properties.off')}
+              </span>
+            </label>
           </div>
-        </PropertyRow>
-      )}
-
-
-      {/* REVERSE */}
-      
-        <div className="flex items-center justify-between px-1 mt-1">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Reverse</span>
-          <label className="relative flex items-center gap-2 cursor-pointer select-none">
-            <div className="relative">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={selectedClip?.reverse === -1}
-                onChange={(e) => {
-                  setClips(prev =>
-                    prev.map(c =>
-                      c.id === selectedClip.id
-                        ? { ...c, reverse: e.target.checked ? -1 : 1 }
-                        : c
-                    )
-                  );
-                }}
-              />
-              <div
-                className="w-8 h-4 rounded-full transition-colors duration-200 peer-checked:bg-indigo-600 bg-zinc-700 border border-white/10"
-                style={{ ...(selectedClip?.reverse === -1 ? { backgroundColor: activeHex } : {}) }}
-              />
-              <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 peer-checked:translate-x-4" />
-            </div>
-            <span
-              className="text-[9px] font-black uppercase tracking-widest transition-colors"
-              style={{ color: selectedClip?.reverse === -1 ? activeHex : undefined }}
-            >
-              {selectedClip?.reverse === -1 ? 'ON' : 'OFF'}
-            </span>
-          </label>
-        </div>
-      
 
           {/* ROTATION */}
-          {(isVideo || isText || isImage) && 
-          
-          (<div className="grid grid-cols-2 gap-2 mt-2">
-              <PropertyRow label="Rotation" activeColor={activeHex}>
-                  <input 
-                    type="number" 
-                    className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all w-full"
-                    value={rot2dState.localValue} // Removido o Math.round daqui para permitir a string "-"
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '-' || val === '') {
-                        rot2dState.setLocalValue(val as any); // Permite o sinal de menos temporário
-                      } else {
-                        const parsed = parseFloat(val);
-                        if (!isNaN(parsed)) {
-                          rot2dState.setLocalValue(parsed);
-                        }
+          {(isVideo || isText || isImage) && (
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <PropertyRow label={t('properties.rotation')} activeColor={activeHex}>
+                <input 
+                  type="number" 
+                  className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all w-full"
+                  value={rot2dState.localValue}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '-' || val === '') {
+                      rot2dState.setLocalValue(val as any);
+                    } else {
+                      const parsed = parseFloat(val);
+                      if (!isNaN(parsed)) {
+                        rot2dState.setLocalValue(parsed);
                       }
-                    }}
-                    onBlur={rot2dState.handleBlurOrEnter}
-                    onKeyDown={(e) => e.key === 'Enter' && rot2dState.handleBlurOrEnter(e)}
-                  />
-                </PropertyRow>
+                    }
+                  }}
+                  onBlur={rot2dState.handleBlurOrEnter}
+                  onKeyDown={(e) => e.key === 'Enter' && rot2dState.handleBlurOrEnter(e)}
+                />
+              </PropertyRow>
 
-                <PropertyRow label="3D Rot" activeColor={activeHex}>
-                  <input 
-                    type="number" 
-                    className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all w-full"
-                    value={rot3dState.localValue} // Removido o Math.round daqui também
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '-' || val === '') {
-                        rot3dState.setLocalValue(val as any); // Permite o sinal de menos temporário
-                      } else {
-                        const parsed = parseFloat(val);
-                        if (!isNaN(parsed)) {
-                          rot3dState.setLocalValue(parsed);
-                        }
+              <PropertyRow label={t('properties.rotation3d')} activeColor={activeHex}>
+                <input 
+                  type="number" 
+                  className="bg-white/5 border border-white/5 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-white/20 transition-all w-full"
+                  value={rot3dState.localValue}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '-' || val === '') {
+                      rot3dState.setLocalValue(val as any);
+                    } else {
+                      const parsed = parseFloat(val);
+                      if (!isNaN(parsed)) {
+                        rot3dState.setLocalValue(parsed);
                       }
-                    }}
-                    onBlur={rot3dState.handleBlurOrEnter}
-                    onKeyDown={(e) => e.key === 'Enter' && rot3dState.handleBlurOrEnter(e)}
-                  />
-                </PropertyRow>
-          </div>)
-          
-          
-          }
-
-
-
+                    }
+                  }}
+                  onBlur={rot3dState.handleBlurOrEnter}
+                  onKeyDown={(e) => e.key === 'Enter' && rot3dState.handleBlurOrEnter(e)}
+                />
+              </PropertyRow>
+            </div>
+          )}
         </section>
 
         {/* SECTION: MASK */}
@@ -878,18 +807,16 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
           <MaskSection clip={selectedClip} setClips={setClips} activeHex={activeHex} />
         )}
 
-        {/* SECTION: FADES */}
-        {
-          (!isAudio) && (<section className="mb-8 p-3 bg-white/5 rounded-lg border border-white/5">
+        {/* SECTION: VIDEO FADES */}
+        {!isAudio && (
+          <section className="mb-8 p-3 bg-white/5 rounded-lg border border-white/5">
             <div className="flex items-center gap-2 mb-3 text-zinc-400">
               <Wind size={12} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Video Transitions</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest">{t('properties.videoTransitions')}</span>
             </div>
-
-
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="p-2 bg-white/5 rounded border border-white/5">
-                <label className="text-[8px] text-zinc-500 uppercase block mb-1">Video Fade In</label>
+                <label className="text-[8px] text-zinc-500 uppercase block mb-1">{t('properties.videoFadeIn')}</label>
                 <div className="flex items-center bg-[#090909] border border-white/10 rounded px-2 py-1 focus-within:border-emerald-500/50 transition-colors">
                   <input 
                     type="number" step="0.1" className="w-full bg-transparent text-[10px] text-white outline-none"
@@ -898,40 +825,30 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                   />
                 </div>
               </div>
-              <div className="p-2 bg-white/5 rounded border border-white/5 ">
-                <label className="text-[8px] text-zinc-500 uppercase block mb-1">Video Fade Out</label>
+              <div className="p-2 bg-white/5 rounded border border-white/5">
+                <label className="text-[8px] text-zinc-500 uppercase block mb-1">{t('properties.videoFadeOut')}</label>
                 <div className="flex items-center bg-[#090909] border border-white/10 rounded px-2 py-1 focus-within:border-emerald-500/50 transition-colors">
                   <input 
-                    type="number" step="0.1" className="w-full bg-transparent text-[10px]  text-white outline-none"
+                    type="number" step="0.1" className="w-full bg-transparent text-[10px] text-white outline-none"
                     value={selectedClip.fadeout || 0}
                     onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, fadeout: parseFloat(e.target.value)} : c))}
                   />
                 </div>
               </div>
             </div>
+          </section>
+        )}
 
-
-            </section>
-          )
-
-
-        }
-
-
-
-        {
-
-
-          (!isText ) && ( <section className="mb-8 p-3 bg-white/5 rounded-lg border border-white/5">
+        {/* SECTION: AUDIO FADES */}
+        {!isText && (
+          <section className="mb-8 p-3 bg-white/5 rounded-lg border border-white/5">
             <div className="flex items-center gap-2 mb-3 text-zinc-400">
               <Wind size={12} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Audio Transitions</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest">{t('properties.audioTransitions')}</span>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
-              {/* Fade In Audio */}
               <div className="space-y-1.5">
-                <label className="text-[8px] text-zinc-500 uppercase font-bold tracking-tight">Fade In (s)</label>
+                <label className="text-[8px] text-zinc-500 uppercase font-bold tracking-tight">{t('properties.fadeInS')}</label>
                 <div className="flex items-center bg-[#090909] border border-white/10 rounded px-2 py-1 focus-within:border-emerald-500/50 transition-colors">
                   <input 
                     type="number" 
@@ -948,10 +865,8 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                   />
                 </div>
               </div>
-
-              {/* Fade Out Audio */}
               <div className="space-y-1.5">
-                <label className="text-[8px] text-zinc-500 uppercase font-bold tracking-tight">Fade Out (s)</label>
+                <label className="text-[8px] text-zinc-500 uppercase font-bold tracking-tight">{t('properties.fadeOutS')}</label>
                 <div className="flex items-center bg-[#090909] border border-white/10 rounded px-2 py-1 focus-within:border-emerald-500/50 transition-colors">
                   <input 
                     type="number" 
@@ -969,63 +884,53 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
                 </div>
               </div>
             </div>
-          </section>)
+          </section>
+        )}
 
-        }
-
-        {/* SECTION: BLEND & MASK */}
+        {/* SECTION: BLEND MODE */}
         {(isVideo || isText || isImage) && (
-          
-
-          <section className="mt-4 pt-4 border-t border-white/5 ">
-            <PropertyRow label="Blending Mode" keyframable={false}>
+          <section className="mt-4 pt-4 border-t border-white/5">
+            <PropertyRow label={t('properties.blendingMode')} keyframable={false}>
               <div className="relative w-full group">
                 <select 
                   className="appearance-none w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all cursor-pointer pr-8"
                   value={selectedClip.blendmode || 'normal'}
                   onChange={(e) => setClips(prev => prev.map(c => c.id === selectedClip.id ? {...c, blendmode: e.target.value} : c))}
                 >
-                  {/* Importante: A classe bg-[#090909] nas options resolve o fundo branco em muitos navegadores */}
-                  <option value="normal" className="bg-[#090909] text-white">Normal</option>
-                  <option value="screen" className="bg-[#090909] text-white">Screen</option>
-                  <option value="add" className="bg-[#090909] text-white">Add</option>
+                  <option value="normal"   className="bg-[#090909] text-white">Normal</option>
+                  <option value="screen"   className="bg-[#090909] text-white">Screen</option>
+                  <option value="add"      className="bg-[#090909] text-white">Add</option>
                   <option value="multiply" className="bg-[#090909] text-white">Multiply</option>
-                  <option value="overlay" className="bg-[#090909] text-white">Overlay</option>
+                  <option value="overlay"  className="bg-[#090909] text-white">Overlay</option>
                 </select>
-
-                {/* Ícone de Seta Customizado */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 group-hover:text-zinc-300 transition-colors">
                   <ChevronDown size={10} strokeWidth={3} />
                 </div>
               </div>
             </PropertyRow>
 
-            {/* Mask Placeholder - Parte Gráfica */}
             <div className="opacity-40 pointer-events-none">
-              <PropertyRow label="Mask (Beta)" keyframable={false}>
+              <PropertyRow label={t('properties.maskBeta')} keyframable={false}>
                 <div className="h-20 border-2 border-dashed border-white/10 rounded flex flex-col items-center justify-center gap-1">
-                    <Layers size={16} />
-                    <span className="text-[8px] uppercase font-bold">Drop mask here</span>
+                  <Layers size={16} />
+                  <span className="text-[8px] uppercase font-bold">{t('properties.dropMaskHere')}</span>
                 </div>
               </PropertyRow>
             </div>
           </section>
-
-
         )}
       </div>
-    <p className="text-[10px] text-zinc-500 uppercase font-bold px-4">Transform & Compositing</p>
+    <p className="text-[10px] text-zinc-500 uppercase font-bold px-4">{t('properties.transformCompositing')}</p>
   </div>
-);
+  );
+};
 
-// Seção de Gerenciamento de Efeitos Aplicados
-/**
- * Componente interno para renderizar os controles específicos de cada efeito
- */
+// ---------------------------------------------------------------------------
+// EFFECTS SECTION
+// ---------------------------------------------------------------------------
+
 const EffectControl = ({ effect, onUpdate }) => {
-  // Helper para Sliders (Intensidade, Pitch, etc)
-
-   
+  const { t } = useTranslation();
 
   const renderSlider = (label: string, attr: string, min: number, max: number, step: number) => (
     <div className="mt-3 space-y-1.5">
@@ -1047,7 +952,6 @@ const EffectControl = ({ effect, onUpdate }) => {
     </div>
   );
 
-  // Helper para Switches (Microphone, Alien)
   const renderToggle = (label: string, attr: string) => (
     <div className="mt-3 flex items-center justify-between bg-white/5 p-2 rounded-md border border-white/5">
       <label className="text-[9px] text-zinc-400 uppercase font-black tracking-widest">{label}</label>
@@ -1060,15 +964,13 @@ const EffectControl = ({ effect, onUpdate }) => {
     </div>
   );
 
-  // Mapeamento de interface por nome do efeito
   switch (effect.name) {
     case 'camera_shake':
       return (
         <>
-          {renderSlider('Vertical Intensity', 'vIntensity', 0, 50, 1)}
-          {renderSlider('Horizontal Intensity', 'hIntensity', 0, 50, 1)}
-          {renderSlider('Frequency', 'frequency', 0, 50, 1)}
-
+          {renderSlider(t('properties.effects_.verticalIntensity'), 'vIntensity', 0, 50, 1)}
+          {renderSlider(t('properties.effects_.horizontalIntensity'), 'hIntensity', 0, 50, 1)}
+          {renderSlider(t('properties.effects_.frequency'), 'frequency', 0, 50, 1)}
         </>
       );
     case 'chromatic_aberration':
@@ -1077,27 +979,24 @@ const EffectControl = ({ effect, onUpdate }) => {
     case 'glitch_flash':
     case 'film_grain':
     case 'film_grain_dust':
-      return renderSlider('Intensity', 'intensity', 0, 100, 1);
+      return renderSlider(t('properties.effects_.intensity'), 'intensity', 0, 100, 1);
     case 'microphone':
     case 'alien':
-      return renderToggle('Effect Active', 'active');
+      return renderToggle(t('properties.effects_.effectActive'), 'active');
     case 'pitch':
-      return renderSlider('Pitch (Semitones)', 'intensity', -24, 24, 1);
+      return renderSlider(t('properties.effects_.pitch'), 'intensity', -24, 24, 1);
     default:
       return (
         <div className="mt-2 text-[8px] text-zinc-600 uppercase italic">
-          No configurable parameters for this effect.
+          {t('properties.effects_.noParams')}
         </div>
       );
   }
 };
 
-/**
- * Seção Principal de Efeitos
- */
 const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
-  
-  // Função para atualizar os parâmetros de um efeito específico dentro do clipe
+  const { t } = useTranslation();
+
   const updateEffectParams = (instanceId: string, newParams: any) => {
     setClips((prev: any[]) => prev.map(c => {
       if (c.id !== clip.id) return c;
@@ -1114,7 +1013,7 @@ const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
     <div className="p-4 space-y-4 select-none">
       <div className="flex items-center justify-between">
         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-500">
-          Applied Effects
+          {t('properties.appliedEffects')}
         </h3>
         <div className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded text-[9px] font-bold text-purple-400">
           {clip.effects?.length || 0}
@@ -1130,22 +1029,20 @@ const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
               key={eff.instanceId || index} 
               className="bg-zinc-900/80 border border-white/5 rounded-xl p-4 shadow-xl"
             >
-              {/* Header do Card de Efeito */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${eff.category === 'audio' ? 'bg-fuchsia-500/20' : 'bg-purple-500/20'}`}>
                     <Sparkles size={14} className={eff.category === 'audio' ? 'text-fuchsia-400' : 'text-purple-400'} />
                   </div>
                   <div>
-                    <h4 className="text-[11px] font-black text-white uppercase tracking-tighter">
-                      {eff.name.replace(/_/g, ' ')}
+                    <h4 className="text-[11px] font-black text-white  tracking-tighter">
+                      {t(`effects.${eff.category.toLowerCase()}.${eff.name.toLowerCase()}`)}
                     </h4>
                     <span className="text-[8px] text-zinc-500 uppercase font-bold tracking-widest">
-                      {eff.category || 'Video'}
+                      {eff.category === 'audio' ? t('properties.effects_.audio') : t('properties.effects_.video')}
                     </span>
                   </div>
                 </div>
-
                 <button 
                   onClick={() => removeEffectFromClip(clip.id, eff.id)}
                   className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-all active:scale-90"
@@ -1154,7 +1051,6 @@ const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
                 </button>
               </div>
 
-              {/* Área de Controles */}
               <div className="pt-2 border-t border-white/5">
                 <EffectControl 
                   effect={eff} 
@@ -1167,7 +1063,7 @@ const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
           <div className="py-20 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-2xl opacity-30">
             <Sparkles size={32} className="text-zinc-500 mb-3" />
             <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
-              Drag an effect onto the clip
+              {t('properties.dragEffectOnClip')}
             </p>
           </div>
         )}
@@ -1175,22 +1071,32 @@ const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
     </div>
   );
 };
-// Seção de Configuração de Transições
-const TransitionsSection = ({ clip }) => (
-  <div className="p-4 space-y-4">
-    <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-500">Transition Settings</h3>
-    {clip.transitions && clip.transitions.length > 0 ? (
-       <div className="space-y-4">
-          {/* Lógica para editar duração da transição existente */}
-          <p className="text-[10px] text-zinc-400">Aqui entrarão os sliders de duração da transição.</p>
-       </div>
-    ) : (
-      <div className="py-10 text-center border-2 border-dashed border-white/5 rounded-xl">
-        <p className="text-[10px] text-zinc-600 uppercase font-bold">No transitions on this clip</p>
-      </div>
-    )}
-  </div>
-);
+
+// ---------------------------------------------------------------------------
+// TRANSITIONS SECTION
+// ---------------------------------------------------------------------------
+
+const TransitionsSection = ({ clip }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="p-4 space-y-4">
+      <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-500">{t('properties.transitionSettings')}</h3>
+      {clip.transitions && clip.transitions.length > 0 ? (
+        <div className="space-y-4">
+          <p className="text-[10px] text-zinc-400">{t('properties.transitionSlidersPlaceholder')}</p>
+        </div>
+      ) : (
+        <div className="py-10 text-center border-2 border-dashed border-white/5 rounded-xl">
+          <p className="text-[10px] text-zinc-600 uppercase font-bold">{t('properties.noTransitionsOnClip')}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// MAIN COMPONENT
+// ---------------------------------------------------------------------------
 
 export const PropertiesAside = ({
   selectedClipIds,
@@ -1208,127 +1114,112 @@ export const PropertiesAside = ({
   isRendering
 }: PropertiesAsideProps) => {
 
-const COLOR_PALETTE: Record<string, string> = {
-  transparent: "transparent",
-  white: "#ffffff",
-  black: "#000000",
-  red: "#ff0000",
-  cyan: "#00ffff",
-  blue: "#0000ff",
-  green: "#00ff00",
-  yellow: "#ffff00",
-  magenta: "#ff00ff"
-};
+  const { t } = useTranslation();
 
-/**
- * Helper to resolve color input to hex
- */
-const resolveColor = (input: string): string => {
-  if (!input || input.toLowerCase() === 'transparent') return 'transparent';
-  const lowerInput = input.toLowerCase();
-  return COLOR_PALETTE[lowerInput] || (input.startsWith('#') ? input : '#ffffff');
-};
+  const COLOR_PALETTE: Record<string, string> = {
+    transparent: "transparent",
+    white: "#ffffff",
+    black: "#000000",
+    red: "#ff0000",
+    cyan: "#00ffff",
+    blue: "#0000ff",
+    green: "#00ff00",
+    yellow: "#ffff00",
+    magenta: "#ff00ff"
+  };
 
+  const resolveColor = (input: string): string => {
+    if (!input || input.toLowerCase() === 'transparent') return 'transparent';
+    const lowerInput = input.toLowerCase();
+    return COLOR_PALETTE[lowerInput] || (input.startsWith('#') ? input : '#ffffff');
+  };
 
-  if (!selectedClipIds || selectedClipIds.length !== 1) return null;
-
-  const foundClip = clips.find(c => c.id === selectedClipIds[0]);
-  if (!foundClip) return null;
-
-  const assetnow = assets.find(a => a.name === foundClip.name);
-
-  const selectedClip = {
+  // ── Derivar clip SEM early return ainda ──
+  const _valid = !!selectedClipIds && selectedClipIds.length === 1;
+  const foundClip = _valid ? clips.find(c => c.id === selectedClipIds[0]) : null;
+  const assetnow  = foundClip ? assets.find(a => a.name === foundClip.name) : null;
+  const selectedClip = foundClip ? {
     ...foundClip,
     path: assetnow?.path,
     type: foundClip.type ? foundClip.type : knowTypeByAssetName(foundClip.name)
-  };
+  } : null;
 
-  if (!selectedClip.path && selectedClip.type != 'text') return null;
-
-  const activeHex = COLOR_MAP[selectedClip.color] || '#4f46e5';
+  const activeHex = selectedClip ? (COLOR_MAP[selectedClip.color] || '#4f46e5') : '#4f46e5';
 
   const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v'];
   const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'];
   const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
 
-  // 2. Função auxiliar para verificar a extensão (ignora maiúsculas/minúsculas)
-  const hasExtension = (path: string, extensions: string []) => 
+  const hasExtension = (path: string, extensions: string[]) => 
     path ? extensions.some(ext => path.toLowerCase().endsWith(ext)) : false;
 
-  // 3. Atribuição das constantes
-  const isVideo = selectedClip.type === "video" || hasExtension(selectedClip.path, VIDEO_EXTENSIONS);
-  const isAudio = selectedClip.type === "audio" || hasExtension(selectedClip.path, AUDIO_EXTENSIONS);
-  const isImage = selectedClip.type === "image" || hasExtension(selectedClip.path, IMAGE_EXTENSIONS);
-  const isText  = selectedClip.type === "text";
+  const isVideo = selectedClip ? (selectedClip.type === "video" || hasExtension(selectedClip.path, VIDEO_EXTENSIONS)) : false;
+  const isAudio = selectedClip ? (selectedClip.type === "audio" || hasExtension(selectedClip.path, AUDIO_EXTENSIONS)) : false;
+  const isImage = selectedClip ? (selectedClip.type === "image" || hasExtension(selectedClip.path, IMAGE_EXTENSIONS)) : false;
+  const isText  = selectedClip ? selectedClip.type === "text" : false;
 
-
-  // Lógica de KeyframeNow (Volume, Opacity, etc)
   const checkKeyframeNow = (prop: string) => {
+    if (!selectedClip) return false;
     const times = selectedClip.keyframes?.[prop]?.map((kf: any) => kf.time) || null;
     return times?.some((kfTime: number) => 
       Math.abs(kfTime - (currentTimeRef.current - selectedClip.start)) <= 0.05
     ) || false;
   };
 
-  const isZoomKNow = checkKeyframeNow('zoom');
-  const isVolumeKNow = checkKeyframeNow('volume');
-  const isOpacityKNow = checkKeyframeNow('opacity');
-  const isSpeedKNow = checkKeyframeNow('speed');
+  const isZoomKNow     = checkKeyframeNow('zoom');
+  const isVolumeKNow   = checkKeyframeNow('volume');
+  const isOpacityKNow  = checkKeyframeNow('opacity');
+  const isSpeedKNow    = checkKeyframeNow('speed');
   const isPositionKNow = checkKeyframeNow('position');
 
-  // 2. Defina os valores interpolados
-  const opacity = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'opacity');
-  const zoom = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'zoom');
-  const volume = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'volume');
-  const speedRaw = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'speed');
-  // speedRaw is stored as real speed value (e.g. 1.0, 2.0). Default is 1.0.
+  const opacity    = selectedClip ? getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'opacity') : 1;
+  const zoom       = selectedClip ? getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'zoom') : 1;
+  const volume     = selectedClip ? getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'volume') : 0;
+  const speedRaw   = selectedClip ? getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'speed') : 1;
   const speedValue = typeof speedRaw === 'number' ? speedRaw : 1.0;
-  const position = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'position') || { x: 0, y: 0 };
-  const rotation3d = getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'rotation3d') || { rot: 0, rot3d: 0 };
+  const position   = (selectedClip ? getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'position') : null) || { x: 0, y: 0 };
+  const rotation3d = (selectedClip ? getInterpolatedValueWithFades(currentTimeRef.current, selectedClip, 'rotation3d') : null) || { rot: 0, rot3d: 0 };
 
-  // 3. Crie os estados editáveis (Use estes nos Inputs)
-  const opacState = useEditableValue(opacity, (v) => updateKeyframes(selectedClip, 'opacity', v));
-  const zoomState = useEditableValue(zoom, (v) => updateKeyframes(selectedClip, 'zoom', v), 'zoom');
-  const volumeState = useEditableValue(volume, (v) => updateKeyframes(selectedClip, 'volume', v), 'volume');
-  const speedState = useEditableValue(speedValue, (v) => {
+  // ── TODOS OS HOOKS — chamados incondicionalmente ──
+  const opacState    = useEditableValue(opacity, (v) => selectedClip && updateKeyframes(selectedClip, 'opacity', v));
+  const zoomState    = useEditableValue(zoom, (v) => selectedClip && updateKeyframes(selectedClip, 'zoom', v), 'zoom');
+  const volumeState  = useEditableValue(volume, (v) => selectedClip && updateKeyframes(selectedClip, 'volume', v), 'volume');
+  const speedState   = useEditableValue(speedValue, (v) => {
+    if (!selectedClip) return;
     const clamped = Math.max(0.1, Math.min(10, v));
     updateKeyframes(selectedClip, 'speed', clamped);
   }, 'speed');
-  const posXState = useEditableValue(position.x, (v) => updateKeyframes(selectedClip, 'position', { ...position, x: v }));
-  const posYState = useEditableValue(position.y, (v) => updateKeyframes(selectedClip, 'position', { ...position, y: v }));
-  const rot2dState = useEditableValue(rotation3d.rot, (v) => updateKeyframes(selectedClip, 'rotation3d', { ...rotation3d, rot: v }));
-  const rot3dState = useEditableValue(rotation3d.rot3d, (v) => updateKeyframes(selectedClip, 'rotation3d', { ...rotation3d, rot3d: v }));
- 
-  const fontSizeState = useEditableValue(selectedClip.font_size || 40, (v) => {
-      setClips(prev => prev.map(c => 
-        c.id === selectedClip.id ? { ...c, font_size: Math.round(v) } : c
-      ));
-    });
+  const posXState    = useEditableValue(position.x, (v) => selectedClip && updateKeyframes(selectedClip, 'position', { ...position, x: v }));
+  const posYState    = useEditableValue(position.y, (v) => selectedClip && updateKeyframes(selectedClip, 'position', { ...position, y: v }));
+  const rot2dState   = useEditableValue(rotation3d.rot, (v) => selectedClip && updateKeyframes(selectedClip, 'rotation3d', { ...rotation3d, rot: v }));
+  const rot3dState   = useEditableValue(rotation3d.rot3d, (v) => selectedClip && updateKeyframes(selectedClip, 'rotation3d', { ...rotation3d, rot3d: v }));
+  const fontSizeState = useEditableValue(selectedClip?.font_size || 40, (v) => {
+    if (!selectedClip) return;
+    setClips(prev => prev.map(c => 
+      c.id === selectedClip.id ? { ...c, font_size: Math.round(v) } : c
+    ));
+  });
+  const bgDim       = selectedClip?.bg_dimetions || { x: 100, y: 100 };
+  const bgDimXState = useEditableValue(bgDim.x, (v) => 
+    selectedClip && setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, bg_dimetions: { ...bgDim, x: v } } : c))
+  );
+  const bgDimYState = useEditableValue(bgDim.y, (v) => 
+    selectedClip && setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, bg_dimetions: { ...bgDim, y: v } } : c))
+  );
 
-    const bgDim = selectedClip.bg_dimetions || { x: 100, y: 100 };
-    const bgDimXState = useEditableValue(bgDim.x, (v) => 
-      setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, bg_dimetions: { ...bgDim, x: v } } : c))
-    );
-    const bgDimYState = useEditableValue(bgDim.y, (v) => 
-      setClips(prev => prev.map(c => c.id === selectedClip.id ? { ...c, bg_dimetions: { ...bgDim, y: v } } : c))
-    );
- 
   const [activeTab, setActiveTab] = useState<'basic' | 'effects' | 'transitions'>('basic');
 
-  if (!selectedClip) return <div className="flex-1 bg-[#090909] border-l border-white/10" />;
+  // ── Early returns DEPOIS de todos os hooks ──
+  if (!_valid || !foundClip) return null;
+  if (!selectedClip!.path && selectedClip!.type !== 'text') return null;
 
   const tabs = !isText ? [
-    { id: 'basic', label: 'Basic' },
-    { id: 'effects', label: 'Effects' },
-    { id: 'transitions', label: 'Transitions' },
-  ] :
-
-  [
-    { id: 'basic', label: 'Basic' }
-   
-  ]
-
-
+    { id: 'basic',       label: t('properties.basic') },
+    { id: 'effects',     label: t('properties.effects') },
+    { id: 'transitions', label: t('properties.transitions') },
+  ] : [
+    { id: 'basic', label: t('properties.basic') }
+  ];
 
   return (
     <aside className={`flex flex-col h-full bg-[#090909] border-l border-white/10 overflow-hidden 
@@ -1355,7 +1246,7 @@ const resolveColor = (input: string): string => {
         ))}
       </div>
 
-      {/* CONTENT AREA COM SCROLL */}
+      {/* CONTENT AREA */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         <AnimatePresence mode="wait">
           <motion.div
@@ -1366,51 +1257,45 @@ const resolveColor = (input: string): string => {
             transition={{ duration: 0.15 }}
           >
             {activeTab === 'basic' && (
-               <BasicSection 
-                 clip = {selectedClip}
-                 isVideo={isVideo}
-                  isText={isText}
-                  isImage={isImage}
-                  activeHex={activeHex}
-                  posXState={posXState}
-                  posYState={posYState}
-                  zoomState={zoomState}
-                  isZoomKNow={isZoomKNow}
-                  updateKeyframes={updateKeyframes}
-                  selectedClip={selectedClip}
-                  availableFonts={availableFonts}
-                  fontSizeState={fontSizeState}
-                  setClips={setClips}
-                  resolveColor={resolveColor}
-                  bgDimXState={bgDimXState}
-                  bgDimYState={bgDimYState}
-                  COLOR_PALETTE={COLOR_PALETTE}
-                  opacState = {opacState}
-                  isOpacityKNow = {isOpacityKNow}
-                  rot2dState = {rot2dState}
-                  rot3dState = {rot3dState}
-                  volumeState = {volumeState}
-                  isVolumeKNow = {isVolumeKNow}
-                  isAudio={isAudio}
-                  speedState={speedState}
-                  isSpeedKNow={isSpeedKNow}
-                  isPositionKNow={isPositionKNow}
-
-
-                
-
-                 
-               />
+              <BasicSection 
+                clip={selectedClip}
+                isVideo={isVideo}
+                isText={isText}
+                isImage={isImage}
+                isAudio={isAudio}
+                activeHex={activeHex}
+                posXState={posXState}
+                posYState={posYState}
+                zoomState={zoomState}
+                isZoomKNow={isZoomKNow}
+                updateKeyframes={updateKeyframes}
+                selectedClip={selectedClip}
+                availableFonts={availableFonts}
+                fontSizeState={fontSizeState}
+                setClips={setClips}
+                resolveColor={resolveColor}
+                bgDimXState={bgDimXState}
+                bgDimYState={bgDimYState}
+                COLOR_PALETTE={COLOR_PALETTE}
+                opacState={opacState}
+                isOpacityKNow={isOpacityKNow}
+                rot2dState={rot2dState}
+                rot3dState={rot3dState}
+                volumeState={volumeState}
+                isVolumeKNow={isVolumeKNow}
+                speedState={speedState}
+                isSpeedKNow={isSpeedKNow}
+                isPositionKNow={isPositionKNow}
+              />
             )}
-            {activeTab === 'effects'  && <EffectsSection 
-               clip={selectedClip} 
-               removeEffectFromClip = {removeEffectFromClip}
-               setClips = {setClips}
-               
-               
-               
-               />}
-            {activeTab === 'transitions'  && <TransitionsSection clip={selectedClip} />}
+            {activeTab === 'effects' && (
+              <EffectsSection 
+                clip={selectedClip} 
+                removeEffectFromClip={removeEffectFromClip}
+                setClips={setClips}
+              />
+            )}
+            {activeTab === 'transitions' && <TransitionsSection clip={selectedClip} />}
           </motion.div>
         </AnimatePresence>
       </div>

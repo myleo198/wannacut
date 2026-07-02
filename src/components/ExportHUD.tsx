@@ -5,6 +5,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Film, Music } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ExportHUDProps {
   isVisible: boolean;
@@ -18,6 +19,7 @@ interface ExportHUDProps {
 
 
 export function ExportHUD({ isVisible, percent, kind, onCancel, projectName }: ExportHUDProps) {
+  const { t } = useTranslation();
   const isAudio = kind === 'audio';
   const accentColor = isAudio ? 'fuchsia' : 'cyan';
 
@@ -49,7 +51,7 @@ export function ExportHUD({ isVisible, percent, kind, onCancel, projectName }: E
                 }
                 <div className="flex flex-col min-w-0">
                   <span className="text-[10px] font-black uppercase tracking-widest text-white">
-                    {isAudio ? 'Exporting Audio' : 'Exporting Video'}
+                    {isAudio ? t('exportHUD.exportingAudio') : t('exportHUD.exportingVideo')}
                   </span>
                   {projectName && (
                     <span className="text-[9px] text-zinc-500 font-medium truncate max-w-[120px]" title={projectName}>
@@ -79,7 +81,7 @@ export function ExportHUD({ isVisible, percent, kind, onCancel, projectName }: E
               className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-zinc-800 hover:border-red-500/40 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-all group"
             >
               <X size={11} />
-              <span className="text-[9px] font-black uppercase tracking-widest">Cancel</span>
+              <span className="text-[9px] font-black uppercase tracking-widest">{t('exportHUD.cancel')}</span>
             </button>
           </div>
         </motion.div>

@@ -5,6 +5,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Film, Music, ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export type ExportFormat =
   | { kind: 'video'; codec: 'mp4' | 'mpeg4' }
@@ -16,17 +17,19 @@ interface ExportModalProps {
   onConfirm: (format: ExportFormat) => void;
 }
 
-const VIDEO_OPTIONS: { label: string; ext: 'mp4' | 'mkv'; desc: string }[] = [
-  { label: 'MP4 / H.264', ext: 'mp4', desc: 'Universal — best compatibility' },
-  { label: 'MKV',         ext: 'mkv', desc: 'Robust container — open-source standard' },
-];
-
-const AUDIO_OPTIONS: { label: string; ext: 'mp3' | 'wav'; desc: string }[] = [
-  { label: 'MP3', ext: 'mp3', desc: 'Compressed — smaller file size' },
-  { label: 'WAV', ext: 'wav', desc: 'Lossless — studio quality' },
-];
-
 export function ExportModal({ isOpen, onClose, onConfirm }: ExportModalProps) {
+  const { t } = useTranslation();
+
+  const VIDEO_OPTIONS: { label: string; ext: 'mp4' | 'mkv'; desc: string }[] = [
+    { label: 'MP4 / H.264', ext: 'mp4', desc: t('exportModal.mp4desc') },
+    { label: 'MKV',         ext: 'mkv', desc: t('exportModal.mkvDesc') },
+  ];
+
+  const AUDIO_OPTIONS: { label: string; ext: 'mp3' | 'wav'; desc: string }[] = [
+    { label: 'MP3', ext: 'mp3', desc: t('exportModal.mp3desc') },
+    { label: 'WAV', ext: 'wav', desc: t('exportModal.wavDesc') },
+  ];
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -41,7 +44,7 @@ export function ExportModal({ isOpen, onClose, onConfirm }: ExportModalProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
               <h2 className="text-xs font-black uppercase tracking-widest text-white">
-                Export As
+                {t('exportModal.title')}
               </h2>
               <button
                 onClick={onClose}
@@ -57,7 +60,7 @@ export function ExportModal({ isOpen, onClose, onConfirm }: ExportModalProps) {
                 <div className="flex items-center gap-2 mb-3">
                   <Film size={13} className="text-cyan-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                    Video
+                    {t('exportModal.video')}
                   </span>
                 </div>
                 <div className="space-y-2">
@@ -84,7 +87,7 @@ export function ExportModal({ isOpen, onClose, onConfirm }: ExportModalProps) {
                 <div className="flex items-center gap-2 mb-3">
                   <Music size={13} className="text-fuchsia-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                    Audio Only
+                    {t('exportModal.audioOnly')}
                   </span>
                 </div>
                 <div className="space-y-2">

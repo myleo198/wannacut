@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Clip } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
+
 import { invoke } from '@tauri-apps/api/core';
 
 import { 
@@ -213,6 +215,72 @@ const TRANSITIONS_LIST = [
 
 
 
+// ── Asset Name Inline Editor ─────────────────────────────────
+// Só entra em modo edição com double-click explícito.
+// Enquanto editando, stopPropagation em keyDown impede que Delete/Backspace
+// vazem para o restante do editor (timeline, etc).
+const AssetNameEditor = ({
+  asset,
+  onRename,
+}: {
+  asset: any;
+  onRename: (oldName: string, newName: string) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(asset.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setValue(asset.name);
+    setEditing(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
+
+  const commit = () => {
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== asset.name) onRename(asset.name, trimmed);
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setValue(asset.name);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation(); // impede Delete/Backspace etc. de vazar pro editor
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full bg-black/60 text-[10px] text-zinc-200 font-medium outline-none border-b border-cyan-500 px-0 truncate"
+      />
+    );
+  }
+
+  return (
+    <p
+      className="text-[10px] text-zinc-200 truncate font-medium cursor-text"
+      onDoubleClick={startEdit}
+      onClick={(e) => e.stopPropagation()}
+      title="Double-click to rename"
+    >
+      {asset.name}
+    </p>
+  );
+};
+
 export const ItensAside = ({
   sidebarWidth,
   typeofclip,
@@ -241,6 +309,7 @@ export const ItensAside = ({
   settingsFolder,
   showNotify
 }: ItensAsideProps) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('Media');
   const [assetTypeFilters, setAssetTypeFilters] = useState<Set<string>>(new Set());
 
@@ -256,12 +325,12 @@ export const ItensAside = ({
   
 
   const menuOptions = [
-    { id: 'Media', icon: <Film size={20} />, label: 'Media', color: 'fuchsia' },
-    { id: 'Sound', icon: <Music size={20} />, label: 'Sounds Library', color: 'rose' },
-    { id: 'Images', icon: <ImageIcon size={20} />, label: 'Image Library', color: 'sky' },
-    { id: 'Text', icon: <Type size={20} />, label: 'Text', color: 'cyan' },
-    { id: 'Effects', icon: <Sparkles size={20} />, label: 'Effects', color: 'purple' },
-    { id: 'Transitions', icon: <Layers size={20} />, label: 'Transitions', color: 'blue' },
+    { id: 'Media', icon: <Film size={20} />, label: t('sidebar.tabs.Media'), color: 'fuchsia' },
+    { id: 'Sound', icon: <Music size={20} />, label: t('sidebar.tabs.Sound'), color: 'rose' },
+    { id: 'Images', icon: <ImageIcon size={20} />, label: t('sidebar.tabs.Images'), color: 'sky' },
+    { id: 'Text', icon: <Type size={20} />, label: t('sidebar.tabs.Text'), color: 'cyan' },
+    { id: 'Effects', icon: <Sparkles size={20} />, label: t('sidebar.tabs.Effects'), color: 'purple' },
+    { id: 'Transitions', icon: <Layers size={20} />, label: t('sidebar.tabs.Transitions'), color: 'blue' },
   ];
 
 
@@ -771,7 +840,7 @@ export const ItensAside = ({
   {/* Header da Library */}
   <div className="p-4 border-b border-zinc-900 flex-shrink-0">
     <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-      Media Library
+      {t('aside.mediaLibrary')}
     </h2>
   </div>
 
@@ -784,7 +853,7 @@ export const ItensAside = ({
       className="aspect-video w-full border border-dashed border-zinc-800 rounded-xl flex flex-col items-center justify-center group cursor-pointer hover:bg-zinc-900/50 mb-6 transition-colors flex-shrink-0"
     >
       <Plus size={20} className="text-zinc-700 group-hover:text-cyan-400 transition-colors" />
-      <h2 className="text-[9px] font-black text-zinc-500 uppercase mt-2">Import Media</h2>
+      <h2 className="text-[9px] font-black text-zinc-500 uppercase mt-2">{t('sidebar.importMedia')}</h2>
     </div>
 
     {/* Search Bar */}
@@ -800,7 +869,7 @@ export const ItensAside = ({
 
       <input
         type="text"
-        placeholder="Search assets..."
+        placeholder={t('sidebar.searchAssets')}
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         className="h-9 w-full bg-[#161616]/50 backdrop-blur-xl border border-white/5 rounded-2xl py-3 pl-12 pr-12 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-600/30 focus:bg-[#1a1a1a] transition-all duration-300"
@@ -824,9 +893,9 @@ export const ItensAside = ({
     {/* Asset Type Filter Buttons */}
     <div className="flex gap-2 mb-5 flex-shrink-0">
       {([
-        { type: 'image', label: 'Images', icon: <ImageIcon size={11} /> },
-        { type: 'video', label: 'Video',  icon: <Film size={11} /> },
-        { type: 'audio', label: 'Audio',  icon: <Music size={11} /> },
+        { type: 'image', label: t('sidebar.images'), icon: <ImageIcon size={11} /> },
+        { type: 'video', label: t('sidebar.video'),  icon: <Film size={11} /> },
+        { type: 'audio', label: t('sidebar.audio'),  icon: <Music size={11} /> },
       ] as const).map(({ type, label, icon }) => {
         const active = assetTypeFilters.has(type);
         return (
@@ -919,24 +988,9 @@ export const ItensAside = ({
               {asset.type === 'image' && <ImageIcon size={10} className="text-cyan-400" />}
             </div>
 
-            {/* Asset Name with Inline Edit */}
+            {/* Asset Name with Inline Edit — double-click to rename */}
             <div className="absolute bottom-2 left-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
-              <p
-                className="text-[10px] text-zinc-200 truncate font-medium outline-none"
-                contentEditable
-                suppressContentEditableWarning={true}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); }
-                  if (e.key === 'Escape') { e.currentTarget.innerText = asset.name; e.currentTarget.blur(); }
-                }}
-                onBlur={(e) => {
-                  const newName = e.currentTarget.innerText.trim();
-                  if (newName && newName !== asset.name) handleRenameAsset(asset.name, newName);
-                }}
-              >
-                {asset.name}
-              </p>
+              <AssetNameEditor asset={asset} onRename={handleRenameAsset} />
             </div>
           </motion.div>
         )) ) : (
@@ -970,7 +1024,7 @@ export const ItensAside = ({
               {/* Header */}
               <div className="p-4 border-b border-zinc-900 flex-shrink-0 flex items-center justify-between">
                 <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                  Sound Library
+                  {t('aside.soundLibrary')}
                 </h2>
 
                 {/* 3-dot menu */}
@@ -978,7 +1032,7 @@ export const ItensAside = ({
                   <button
                     onClick={() => setShowKeyMenu(v => !v)}
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all"
-                    title="Opções"
+                    title={t('sidebar.options')}
                   >
                     <MoreVertical size={14} />
                   </button>
@@ -1001,7 +1055,7 @@ export const ItensAside = ({
                           className="w-full flex items-center gap-3 px-4 py-3 text-left text-[11px] text-zinc-300 hover:bg-white/5 transition-colors"
                         >
                           <Key size={13} className="text-rose-400 flex-shrink-0" />
-                          <span>{freesoundApiKey ? 'Trocar API Key' : 'Inserir API Key'}</span>
+                          <span>{freesoundApiKey ? t('sidebar.changeApiKey') : t('sidebar.insertApiKey')}</span>
                         </button>
                       </motion.div>
                     )}
@@ -1030,8 +1084,8 @@ export const ItensAside = ({
                           <Key size={15} className="text-rose-400" />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black text-zinc-200 uppercase tracking-widest">API Key Freesound</p>
-                          <p className="text-[9px] text-zinc-600 uppercase tracking-wider">Sua chave pessoal e gratuita</p>
+                          <p className="text-[11px] font-black text-zinc-200 uppercase tracking-widest"> {t('sidebar.apiKeyFreesound')}</p>
+                          <p className="text-[9px] text-zinc-600 uppercase tracking-wider"> {t('sidebar.personalFreeKey')}</p>
                         </div>
                       </div>
 
@@ -1039,7 +1093,7 @@ export const ItensAside = ({
                         type="text"
                         value={keyModalInput}
                         onChange={e => setKeyModalInput(e.target.value)}
-                        placeholder="Cole sua API Key aqui..."
+                        placeholder={t('sidebar.pasteKeyHere')}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-[11px] text-zinc-200 placeholder:text-zinc-700 focus:outline-none focus:border-rose-500/40 transition-all font-mono"
                         onKeyDown={e => { if (e.key === 'Enter') handleSaveApiKey(); }}
                         autoFocus
@@ -1083,22 +1137,16 @@ export const ItensAside = ({
                     <div>
                      <p className="text-[12px] font-black text-zinc-200 uppercase tracking-widest mb-1">Freesound API Key</p>
                       <p className="text-[9px] text-zinc-500 uppercase tracking-widest leading-relaxed">
-                        You need a free key<br/>to search for sounds
+                        {t('sidebar.freesoundNeedKey')}
                       </p>
                     </div>
                   </div>
 
                   {/* Guia rápido */}
                   <div className="flex flex-col gap-2">
-                    {[
-                       { step: '1', text: 'Create a free account at freesound.org' },
-                      { step: '2', text: 'Go to: freesound.org/apiv2/apply' },
-                      { step: '3', text: 'Fill out the form (for personal use)' },
-                      { step: '4', text: 'Copy the "Client secret / API Key" field' },
-                      { step: '5', text: 'Paste it here using the button below' },
-                    ].map(({ step, text }) => (
-                      <div key={step} className="flex items-start gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5">
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-rose-600/20 text-rose-400 text-[9px] font-black flex items-center justify-center mt-0.5">{step}</span>
+                    {(t('sidebar.freesoundSteps', { returnObjects: true }) as string[]).map((text, i) => (
+                      <div key={i} className="flex items-start gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-rose-600/20 text-rose-400 text-[9px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
                         <p className="text-[10px] text-zinc-400 leading-relaxed">{text}</p>
                       </div>
                     ))}
@@ -1111,7 +1159,7 @@ export const ItensAside = ({
                     className="flex items-center justify-center gap-2 h-9 rounded-xl bg-white/[0.03] border border-white/10 text-[10px] font-bold text-zinc-400 hover:text-zinc-200 hover:border-white/20 transition-all uppercase tracking-widest"
                   >
                     <ExternalLink size={11} />
-                    Open freesound.org
+                    {t('sidebar.openFreesound')}
                   </a>
 
                   <button
@@ -1138,7 +1186,7 @@ export const ItensAside = ({
                   </div>
                   <input
                     type="text"
-                    placeholder="Search sounds..."
+                    placeholder={t('sidebar.searchSounds')}
                     value={soundQuery}
                     onChange={e => setSoundQuery(e.target.value)}
                     className="h-9 w-full bg-[#161616]/50 backdrop-blur-xl border border-white/5 rounded-2xl py-3 pl-10 pr-10 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-rose-600/30 focus:bg-[#1a1a1a] transition-all duration-300"
@@ -1162,9 +1210,9 @@ export const ItensAside = ({
                 <div className="flex gap-2 flex-shrink-0">
                   {(
                     [
-                      { id: 'cc0',  label: 'CC0',  tip: 'No rights reserved — use freely, no credit needed.' },
-                      { id: 'ccby', label: 'CC BY', tip: 'Free to use — credit the author.' },
-                      { id: 'ccnc', label: 'CC NC', tip: 'Non-commercial use only — credit required.' },
+                      { id: 'cc0',  label: 'CC0',  tip: t('aside.licenseCC0tip') },
+                      { id: 'ccby', label: 'CC BY', tip: t('aside.licenseCCBYtip') },
+                      { id: 'ccnc', label: 'CC NC', tip: t('aside.licenseCCNCtip') },
                     ] as { id: LicenseFilter; label: string; tip: string }[]
                   ).map(({ id, label, tip }) => (
                     <div key={id} className="relative group/tip flex-1">
@@ -1179,8 +1227,8 @@ export const ItensAside = ({
                         {label}
                       </button>
                       {/* Tooltip */}
-                      <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-md bg-zinc-800 text-[9px] text-zinc-200 whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-xl border border-white/5">
-                        {tip}
+                      <div className="z-[50] pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-md bg-zinc-800 text-[9px] text-zinc-200 whitespace-nowrap opacity-0  group-hover/tip:opacity-100 transition-opacity shadow-xl border border-white/5">
+                        <p className="whitespace-pre-wrap">{tip}</p>
                         <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-800 rotate-45 -mt-1" />
                       </div>
                     </div>
@@ -1193,10 +1241,10 @@ export const ItensAside = ({
                     <div className="py-16 flex flex-col items-center gap-3 text-center">
                       <Music size={28} className="text-zinc-800" />
                       <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold">
-                        Search for royalty-free sounds
+                        {t('sidebar.searchRoyaltyFreeSounds')}
                       </p>
                       <p className="text-[9px] text-zinc-700 uppercase tracking-widest">
-                        Powered by Freesound.org
+                        {t('sidebar.poweredByFreesound')}
                       </p>
                     </div>
                   )}
@@ -1204,14 +1252,14 @@ export const ItensAside = ({
                   {soundLoading && (
                     <div className="py-16 flex flex-col items-center gap-3">
                       <Loader2 size={22} className="text-rose-500 animate-spin" />
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Searching...</p>
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">{t('sidebar.searchingLabel')}</p>
                     </div>
                   )}
 
                   {!soundLoading && soundQuery.trim() && soundResults.length === 0 && (
                     <div className="py-16 flex flex-col items-center gap-3">
                       <Search size={22} className="text-zinc-800" />
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">No results found</p>
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest"> {t('sidebar.noResultsFound')}</p>
                     </div>
                   )}
 
@@ -1291,7 +1339,7 @@ export const ItensAside = ({
                                 {isCopied ? <Check size={11} /> : <Copy size={11} />}
                               </button>
                               <div className="pointer-events-none absolute bottom-full right-0 mb-2 px-2 py-1 rounded-md bg-zinc-800 text-[9px] text-zinc-200 whitespace-nowrap opacity-0 group-hover/copy:opacity-100 transition-opacity z-50 shadow-xl border border-white/5">
-                                Copy Author Credit
+                                {t('sidebar.copyAuthorCredit')}
                                 <div className="absolute top-full right-2 w-2 h-2 bg-zinc-800 rotate-45 -mt-1" />
                               </div>
                             </div>
@@ -1376,7 +1424,7 @@ export const ItensAside = ({
               {/* Header */}
               <div className="p-4 border-b border-zinc-900 flex-shrink-0 flex items-center justify-between">
                 <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                  Image Library
+                  {t('aside.imageLibrary')}
                 </h2>
 
                 {/* 3-dot menu */}
@@ -1384,7 +1432,7 @@ export const ItensAside = ({
                   <button
                     onClick={() => setShowPexelsKeyMenu(v => !v)}
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all"
-                    title="Opções"
+                    title={t('sidebar.options')}
                   >
                     <MoreVertical size={14} />
                   </button>
@@ -1407,7 +1455,7 @@ export const ItensAside = ({
                           className="w-full flex items-center gap-3 px-4 py-3 text-left text-[11px] text-zinc-300 hover:bg-white/5 transition-colors"
                         >
                           <Key size={13} className="text-sky-400 flex-shrink-0" />
-                          <span>{pexelsApiKey ? 'Trocar API Key' : 'Inserir API Key'}</span>
+                          <span>{pexelsApiKey ? t('sidebar.changeApiKey') : t('sidebar.insertApiKey')}</span>
                         </button>
                       </motion.div>
                     )}
@@ -1436,8 +1484,8 @@ export const ItensAside = ({
                           <Key size={15} className="text-sky-400" />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black text-zinc-200 uppercase tracking-widest">API Key Pexels</p>
-                          <p className="text-[9px] text-zinc-600 uppercase tracking-wider">Sua chave pessoal e gratuita</p>
+                          <p className="text-[11px] font-black text-zinc-200 uppercase tracking-widest"> {t('sidebar.apiKeyPexels')}</p>
+                          <p className="text-[9px] text-zinc-600 uppercase tracking-wider"> {t('sidebar.personalFreeKey')}</p>
                         </div>
                       </div>
 
@@ -1445,7 +1493,7 @@ export const ItensAside = ({
                         type="text"
                         value={pexelsKeyModalInput}
                         onChange={e => setPexelsKeyModalInput(e.target.value)}
-                        placeholder="Cole sua API Key aqui..."
+                        placeholder={t('sidebar.pasteKeyHere')}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-[11px] text-zinc-200 placeholder:text-zinc-700 focus:outline-none focus:border-sky-500/40 transition-all font-mono"
                         onKeyDown={e => { if (e.key === 'Enter') handleSavePexelsApiKey(); }}
                         autoFocus
@@ -1489,23 +1537,16 @@ export const ItensAside = ({
                     <div>
                       <p className="text-[12px] font-black text-zinc-200 uppercase tracking-widest mb-1">Pexels API Key</p>
                       <p className="text-[9px] text-zinc-500 uppercase tracking-widest leading-relaxed">
-                        You need a free key<br/>to search for images
+                        {t('sidebar.pexelsNeedKey')}
                       </p>
                     </div>
                   </div>
 
                   {/* Guia rápido */}
                   <div className="flex flex-col gap-2">
-                    {[
-                      { step: '1', text: 'Create a free account at pexels.com' },
-                      { step: '2', text: 'Go to: pexels.com/api' },
-                      { step: '3', text: 'Click "Your API Key" and create a new key' },
-                      { step: '4', text: 'Give the app a name (e.g. "WannaCut")' },
-                      { step: '5', text: 'Copy the generated API Key' },
-                      { step: '6', text: 'Paste it here using the button below' },
-                    ].map(({ step, text }) => (
-                      <div key={step} className="flex items-start gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5">
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600/20 text-sky-400 text-[9px] font-black flex items-center justify-center mt-0.5">{step}</span>
+                    {(t('sidebar.pexelsSteps', { returnObjects: true }) as string[]).map((text, i) => (
+                      <div key={i} className="flex items-start gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600/20 text-sky-400 text-[9px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
                         <p className="text-[10px] text-zinc-400 leading-relaxed">{text}</p>
                       </div>
                     ))}
@@ -1518,7 +1559,7 @@ export const ItensAside = ({
                     className="flex items-center justify-center gap-2 h-9 rounded-xl bg-white/[0.03] border border-white/10 text-[10px] font-bold text-zinc-400 hover:text-zinc-200 hover:border-white/20 transition-all uppercase tracking-widest"
                   >
                     <ExternalLink size={11} />
-                    Open pexels.com/api
+                    {t('sidebar.openPexels')}
                   </a>
 
                   <button
@@ -1545,7 +1586,7 @@ export const ItensAside = ({
                     </div>
                     <input
                       type="text"
-                      placeholder="Search images and videos..."
+                      placeholder={t('sidebar.searchImagesVideos')}
                       value={pexelsQuery}
                       onChange={e => setPexelsQuery(e.target.value)}
                       className="h-9 w-full bg-[#161616]/50 backdrop-blur-xl border border-white/5 rounded-2xl py-3 pl-10 pr-10 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-sky-600/30 focus:bg-[#1a1a1a] transition-all duration-300"
@@ -1569,9 +1610,9 @@ export const ItensAside = ({
                   <div className="flex gap-1.5 flex-shrink-0">
                     {(
                       [
-                        { id: 'image', label: 'Image' },
-                        { id: 'video', label: 'Video' },
-                        { id: 'both',  label: 'Both'  },
+                        { id: 'image', label: t('sidebar.mediaType.image') },
+                        { id: 'video', label: t('sidebar.mediaType.video') },
+                        { id: 'both',  label: t('sidebar.mediaType.both')  },
                       ] as { id: PexelsMediaType; label: string }[]
                     ).map(({ id, label }) => (
                       <button
@@ -1592,10 +1633,10 @@ export const ItensAside = ({
                   <div className="flex gap-1.5 flex-shrink-0">
                     {(
                       [
-                        { id: 'landscape', label: 'Wide' },
-                        { id: 'portrait',  label: 'Portrait' },
-                        { id: 'square',    label: 'Square' },
-                        { id: 'all',       label: 'All' },
+                        { id: 'landscape', label: t('sidebar.orientation.wide') },
+                        { id: 'portrait',  label: t('sidebar.orientation.portrait') },
+                        { id: 'square',    label: t('sidebar.orientation.square') },
+                        { id: 'all',       label: t('sidebar.orientation.all') },
                       ] as { id: PexelsOrientation; label: string }[]
                     ).map(({ id, label }) => (
                       <button
@@ -1617,10 +1658,10 @@ export const ItensAside = ({
                     <div className="py-16 flex flex-col items-center gap-3 text-center">
                       <ScanSearch size={28} className="text-zinc-800" />
                       <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold">
-                        Search for royalty-free images
+                        {t('sidebar.searchRoyaltyFreeImages')}
                       </p>
                       <p className="text-[9px] text-zinc-700 uppercase tracking-widest">
-                        Powered by Pexels
+                        {t('sidebar.poweredByPexels')}
                       </p>
                     </div>
                   )}
@@ -1628,14 +1669,14 @@ export const ItensAside = ({
                   {pexelsLoading && (
                     <div className="py-16 flex flex-col items-center gap-3">
                       <Loader2 size={22} className="text-sky-500 animate-spin" />
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Searching...</p>
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest"> {t('sidebar.searchingLabel')}</p>
                     </div>
                   )}
 
                   {!pexelsLoading && pexelsQuery.trim() && pexelsResults.length === 0 && (
                     <div className="py-16 flex flex-col items-center gap-3">
                       <Search size={22} className="text-zinc-800" />
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest">No results found</p>
+                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest"> {t('sidebar.noResultsFound')}</p>
                     </div>
                   )}
 
@@ -1817,102 +1858,112 @@ export const ItensAside = ({
 
         {/* Seção de Texto/Fontes no ItensAside.tsx */}
         {(activeTab === 'Text') && (
-          <div className="grid grid-cols-1 gap-2">
-              {/* --- FONTES LOCAIS --- */}
-              {availableFonts.map((fontPath) => {
-                const fontFile = fontPath.split(/[\\/]/).pop() || "";
-                const fontName = fontFile.split('.')[0];
-                return (
-                  <motion.div
-                    key={fontPath}
-                    draggable
-                    onDragStart={(e) => handleDragStartText(e,fontName, fontPath)}
-                    className="group relative flex flex-col bg-white/[0.02] border border-white/5 p-3 rounded-lg hover:border-cyan-500/30 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-all overflow-hidden h-[85px]"
-                  >
-                    <div className="flex-1 flex items-center min-h-0">
-                      <p 
-                        style={{ fontFamily: fontName, fontSize: 'clamp(12px, 4vw, 20px)' }} 
-                        className="text-white truncate w-full leading-none"
-                      >
-                        {fontName.replace(/_/g, ' ')}
-                      </p>
-                    </div>
-                    
-                    <div className="flex justify-between items-center pt-2 border-t border-white/5 mt-auto">
-                      <span className="text-[7px] text-zinc-600 uppercase font-black tracking-tighter">
-                         {fontPath.split('.').pop()?.toUpperCase()}
-                      </span>
-                      <Type size={10} className="text-zinc-700 group-hover:text-cyan-500 transition-colors" />
-                    </div>
-                  </motion.div>
-                );
-              })}
 
-              {/* --- FONTES CLOUD --- */}
-              {cloudFonts
-                .filter(cf => !availableFonts.some(af => af.includes(cf.file)))
-                .map((font) => {
-                  const fontName = font.file.split('.')[0];
-                  const progress = downloadProgress[font.file] || 0;
+          <aside className="relative border-r border-zinc-800 bg-[#0c0c0c] flex flex-col h-full w-full">
+              {/* Header */}
+              <div className="p-4 border-b border-zinc-900 flex-shrink-0 flex items-center justify-between">
+                <h2 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                   {t('aside.textLibrary')}
+                </h2>
+              </div> 
+            <div className="grid grid-cols-1 gap-2">
 
+                {/* --- FONTES LOCAIS --- */}
+                {availableFonts.map((fontPath) => {
+                  const fontFile = fontPath.split(/[\\/]/).pop() || "";
+                  const fontName = fontFile.split('.')[0];
                   return (
-                    <div key={font.id} className="group relative flex flex-col bg-zinc-950/40 border border-dashed border-white/10 p-3 rounded-lg hover:border-cyan-500/30 transition-all h-[85px] overflow-hidden">
-                      <CloudFontPreviewStyles fonts={[font]} />
-                      
+                    <motion.div
+                      key={fontPath}
+                      draggable
+                      onDragStart={(e) => handleDragStartText(e,fontName, fontPath)}
+                      className="group relative flex flex-col bg-white/[0.02] border border-white/5 p-3 rounded-lg hover:border-cyan-500/30 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-all overflow-hidden h-[85px]"
+                    >
                       <div className="flex-1 flex items-center min-h-0">
                         <p 
-                          style={{ 
-                            fontFamily: `'${fontName}_preview', sans-serif`,
-                            fontSize: 'clamp(12px, 4vw, 20px)' 
-                          }} 
-                          className="text-zinc-500 group-hover:text-zinc-200 transition-colors truncate w-full leading-none"
+                          style={{ fontFamily: fontName, fontSize: 'clamp(12px, 4vw, 20px)' }} 
+                          className="text-white truncate w-full leading-none"
                         >
                           {fontName.replace(/_/g, ' ')}
                         </p>
                       </div>
-
+                      
                       <div className="flex justify-between items-center pt-2 border-t border-white/5 mt-auto">
-                        <div className="flex items-center gap-1">
-                          {font.plan !== 'free' && <DiamondPlus size={8} className="text-cyan-400 fill-cyan-400/20" />}
-                          <span className="text-[7px] text-zinc-700 uppercase font-bold tracking-tighter">{font.plan} </span>
-                        </div>
-                        
-                        
-
-
-                        {(license?.plan === font.plan || font.plan == 'free') && (
-                          <button onClick={() => handleDownloadFont(font)}>
-                            <Download size={12} />
-                          </button>
-                        )}
-
-
-                        {(license?.plan === 'ultimate' && font.plan == 'pro') && (
-                          <button onClick={() => handleDownloadFont(font)}>
-                            <Download size={12} />
-                          </button>
-                        )}
-
- 
-
-
-
-
+                        <span className="text-[7px] text-zinc-600 uppercase font-black tracking-tighter">
+                          {fontPath.split('.').pop()?.toUpperCase()}
+                        </span>
+                        <Type size={10} className="text-zinc-700 group-hover:text-cyan-500 transition-colors" />
                       </div>
-
-                      {/* Barra de Progresso no Fundo */}
-                      {progress > 0 && (
-                        <div className="absolute bottom-0 left-0 w-full h-[2px] bg-zinc-900">
-                          <motion.div 
-                            animate={{ width: `${progress}%` }}
-                            className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
-                          />
-                        </div>
-                      )}
-                    </div>
+                    </motion.div>
                   );
                 })}
+
+                {/* --- FONTES CLOUD --- */}
+                {cloudFonts
+                  .filter(cf => !availableFonts.some(af => af.includes(cf.file)))
+                  .map((font) => {
+                    const fontName = font.file.split('.')[0];
+                    const progress = downloadProgress[font.file] || 0;
+
+                    return (
+                      <div key={font.id} className="group relative flex flex-col bg-zinc-950/40 border border-dashed border-white/10 p-3 rounded-lg hover:border-cyan-500/30 transition-all h-[85px] overflow-hidden">
+                        <CloudFontPreviewStyles fonts={[font]} />
+                        
+                        <div className="flex-1 flex items-center min-h-0">
+                          <p 
+                            style={{ 
+                              fontFamily: `'${fontName}_preview', sans-serif`,
+                              fontSize: 'clamp(12px, 4vw, 20px)' 
+                            }} 
+                            className="text-zinc-500 group-hover:text-zinc-200 transition-colors truncate w-full leading-none"
+                          >
+                            {fontName.replace(/_/g, ' ')}
+                          </p>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2 border-t border-white/5 mt-auto">
+                          <div className="flex items-center gap-1">
+                            {font.plan !== 'free' && <DiamondPlus size={8} className="text-cyan-400 fill-cyan-400/20" />}
+                            <span className="text-[7px] text-zinc-700 uppercase font-bold tracking-tighter">{font.plan} </span>
+                          </div>
+                          
+                          
+
+
+                          {(license?.plan === font.plan || font.plan == 'free') && (
+                            <button onClick={() => handleDownloadFont(font)}>
+                              <Download size={12} />
+                            </button>
+                          )}
+
+
+                          {(license?.plan === 'ultimate' && font.plan == 'pro') && (
+                            <button onClick={() => handleDownloadFont(font)}>
+                              <Download size={12} />
+                            </button>
+                          )}
+
+  
+
+
+
+
+                        </div>
+
+                        {/* Barra de Progresso no Fundo */}
+                        {progress > 0 && (
+                          <div className="absolute bottom-0 left-0 w-full h-[2px] bg-zinc-900">
+                            <motion.div 
+                              animate={{ width: `${progress}%` }}
+                              className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+                            />
+                          </div>
+                        )}
                       </div>
+                    );
+                  })}
+                        </div>
+          </aside>
         )}
         
         
@@ -1927,8 +1978,8 @@ export const ItensAside = ({
                {menuOptions.find(o => o.id === activeTab)?.icon}
             </div>
             <div className="space-y-1">
-              <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-tighter">{activeTab} No Fonts </h3>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium"> Download and put in subfolder fonts in freecut_settings (check  the configurations) </p>
+              <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-tighter">{activeTab} {t('sidebar.noFonts').split('.')[0]}</h3>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">{t('sidebar.noFonts')}</p>
             </div>
           </div>
 
@@ -1945,7 +1996,7 @@ export const ItensAside = ({
               { (typeofclip == 'video' || typeofclip == 'image') && (
               <div>
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-purple-500 mb-4">
-                  Video Effects
+                  {t('sidebar.videoEffects')}
                 </h3>
                 <div className="grid grid-cols-1 gap-2">
                   {VIDEO_EFFECTS.map((eff) => (
@@ -1957,7 +2008,7 @@ export const ItensAside = ({
                     >
                       <div className="flex items-center gap-3">
                         <Sparkles size={16} className="text-purple-400" />
-                        <p className="text-xs text-zinc-200 font-medium">{eff.label}</p>
+                        <p className="text-xs text-zinc-200 font-medium"> {t(`effects.video.${eff.id}`)}</p>
                       </div>
                     </motion.div>
                   ))}
@@ -1970,7 +2021,7 @@ export const ItensAside = ({
               {/* Audio Effects */}
               { (typeofclip == 'video' || typeofclip == 'audio') && ( <div>
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-fuchsia-500 mb-4">
-                  Audio Effects
+                  {t('sidebar.audioEffects')}
                 </h3>
                 <div className="grid grid-cols-1 gap-2">
                   {AUDIO_EFFECTS.map((eff) => (
@@ -1982,7 +2033,7 @@ export const ItensAside = ({
                     >
                       <div className="flex items-center gap-3">
                         <Music size={16} className="text-fuchsia-400" />
-                        <p className="text-xs text-zinc-200 font-medium">{eff.label}</p>
+                        <p className="text-xs text-zinc-200 font-medium">{t(`effects.audio.${eff.id}`)}</p>
                       </div>
                     </motion.div>
                   ))}
@@ -1995,7 +2046,7 @@ export const ItensAside = ({
           {activeTab === 'Transitions' && (
             <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto custom-scrollbar">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-500 mb-2">
-                Transitions Library
+                {t('sidebar.transitionsLibrary')}
               </h3>
               <div className="grid grid-cols-1 gap-2">
                 {TRANSITIONS_LIST.map((trans) => (
@@ -2008,7 +2059,7 @@ export const ItensAside = ({
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Layers size={20} className="text-blue-400 group-hover:scale-110 transition-transform" />
                       <p className="text-[10px] text-zinc-300 font-bold uppercase tracking-tighter">
-                        {trans.label}
+                        {t(`transitions.${trans.id}`)}
                       </p>
                     </div>
                     

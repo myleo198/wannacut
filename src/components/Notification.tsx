@@ -3,6 +3,7 @@ import { X, ExternalLink, BellOff, Zap, ChevronLeft, ChevronRight } from 'lucide
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-shell';
+import { useTranslation } from 'react-i18next';
 
 // Interface para que o App.tsx possa controlar o modal
 export interface NotificationsRef {
@@ -18,6 +19,7 @@ interface NotificationsProps {
 const SPOTLIGHT_KEY = 'wannacut_spotlight_date';
 
 const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[]; onClose: () => void }) => {
+  const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const n = notifications[index];
   const total = notifications.length;
@@ -62,7 +64,7 @@ const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[
           <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-full px-2.5 py-1">
             <Zap size={10} className="text-cyan-400" />
             <span className="text-[9px] font-black uppercase tracking-[0.2em] text-cyan-400">
-              {n.type_ === 'update' ? 'Update' : 'Urgent'}
+              {n.type_ === 'update' ? t('notifications.update') : t('notifications.urgent')}
             </span>
           </div>
 
@@ -99,7 +101,7 @@ const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[
                 }}
                 className="inline-flex items-center gap-2 mt-6 px-5 py-2.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/60 rounded-xl text-[11px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 transition-all cursor-pointer"
               >
-                {n.link_text || 'View Details'} <ExternalLink size={11} />
+                {n.link_text || t('notifications.viewDetails')} <ExternalLink size={11} />
               </button>
             )}
           </div>
@@ -147,6 +149,7 @@ const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewNotifications }, ref) => {
+  const { t } = useTranslation();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [spotlightNotifs, setSpotlightNotifs] = useState<any[]>([]);
@@ -241,7 +244,7 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
                     <Zap size={14} className="text-cyan-400" />
                 </div>
                 <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
-                    System Feed
+                    {t('notifications.systemFeed')}
                 </h2>
               </div>
               <button 
@@ -257,7 +260,7 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
               {notifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 opacity-20">
                   <BellOff size={40} strokeWidth={1} />
-                  <p className="text-[10px] mt-4 uppercase tracking-[0.3em] font-mono">No incoming signals</p>
+                  <p className="text-[10px] mt-4 uppercase tracking-[0.3em] font-mono">{t('notifications.noSignals')}</p>
                 </div>
               ) : (
                 notifications.map((n: any) => (
@@ -302,7 +305,7 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
                             rel="noreferrer"
                             className="inline-flex items-center gap-2 mt-4 text-[9px] text-zinc-500 hover:text-white uppercase font-black tracking-widest transition-all hover:gap-3"
                         >
-                            {n.link_text ? n.link_text : 'Access'} <ExternalLink size={10} />
+                            {n.link_text ? n.link_text : t('notifications.access')} <ExternalLink size={10} />
                         </a>
                         )}
                     </motion.div>

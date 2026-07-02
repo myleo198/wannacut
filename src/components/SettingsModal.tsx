@@ -1,6 +1,7 @@
 
 import i18n from '../i18n';
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Monitor, Film, Music, 
@@ -19,7 +20,7 @@ interface ProjectSettings {
   sampleRate: number;
 }
 
-interface wannacutSettings {
+interface wannacutSettings {react
   workspace: string;
   gpu: string | null;
   shortcuts: string;
@@ -57,7 +58,9 @@ export const SettingsModal: React.FC<Props> = ({
   // Ajuste: Se não houver projeto, a aba inicial DEVE ser' (System)
   const [activeTab, setActiveTab] = useState(isProjectLoaded ? 'project' : 'wannacut');
   // Estado para controlar qual arquivo está aguardando confirmação de restauração
+  const { t } = useTranslation();
   const [pendingRestoreFile, setPendingRestoreFile] = useState<string | null>(null);
+
   
   const [projSettings, setProjSettings] = useState<ProjectSettings>(currentProjectSettings);
   const [wannacutSettings, setwannacutSettings] = useState<wannacutSettings>({
@@ -89,7 +92,7 @@ export const SettingsModal: React.FC<Props> = ({
       setHistoryFiles(files.reverse());
     } catch (err) {
       console.error("Failed to load project history:", err);
-      showNotify("Error loading history logs", 'error');
+      showNotify(t('settings.notify.errorLoadingHistory'), 'error');
     } finally {
       setIsLoadingHistory(false);
     }
@@ -98,11 +101,20 @@ export const SettingsModal: React.FC<Props> = ({
 
   //coidgo pras langs
   
-    const langs = [
-    { code: 'pt', label: 'Português' },
-    { code: 'en', label: 'English' },
-    { code: 'es', label: 'Español' },
-    ];
+   const langs = [
+  { code: 'pt', label: 'Português' },
+  { code: 'en', label: 'English' },
+  { code: 'es', label: 'Español' },
+  { code: 'vi', label: 'Tiếng Việt' },
+  { code: 'zh-CN', label: '简体中文' },
+  { code: 'zh-TW', label: '繁體中文' },
+  { code: 'fil', label: 'Filipino' },
+  { code: 'id', label: 'Bahasa Indonesia' },
+  { code: 'hi', label: 'हिन्दी' },
+  { code: 'my', label: 'မြန်မာဘာသာ' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'ko', label: '한국어' },
+];
 
     const change = (code: string) => {
     i18n.changeLanguage(code);
@@ -126,12 +138,12 @@ const executeRestore = async () => {
     }) as string;
 
     onLoadHistoryVersion(jsonContent);
-    showNotify("Project version restored successfully!", 'success');
+    showNotify(t('settings.notify.versionRestored'), 'success');
     setPendingRestoreFile(null);
     onClose(); // Fecha o SettingsModal principal
   } catch (err) {
     console.error("Failed to read history file:", err);
-    showNotify("Failed to restore this version.", 'error');
+    showNotify(t('settings.notify.failedRestore'), 'error');
     setPendingRestoreFile(null);
   }
 };
@@ -236,7 +248,7 @@ const executeRestore = async () => {
             await invoke('transfer_folder_content', { oldPath, newPath: fullPath });
             //window.location.reload();
           } catch (err) {
-            showNotify("File migration failed: " + err, 'error');
+            showNotify(t('settings.notify.fileMigrationFailed') + err, 'error');
             return; 
           }
         }
@@ -262,13 +274,13 @@ const executeRestore = async () => {
           await checkConfig()
         }
         
-        showNotify(`${type} successfully updated to: ${fullPath}`, 'success');
+        showNotify(`${type} ${t('settings.notify.folderUpdated')} ${fullPath}`, 'success');
         //window.location.reload();
 
 
       } catch (err) {
         console.error(`Error in configurate dir ${type}:`, err);
-        showNotify("Error initializing folder structure in the system.", 'error');
+        showNotify(t('settings.notify.errorInitFolder'), 'error');
       }
     }
 
@@ -278,9 +290,9 @@ const executeRestore = async () => {
 
   // Definição das opções com a trava lógica
   const allMenuOptions = [
-    { id: 'project', icon: <Layout size={16} />, label: 'Project', color: 'text-blue-400', dependOfProject: true },
-    { id: 'history', icon: <History size={16} />, label: 'History', color: 'text-purple-400', dependOfProject: true },
-    { id: 'wannacut', icon: <Cpu size={16} />, label: 'System', color: 'text-cyan-400', dependOfProject: false },
+    { id: 'project',   icon: <Layout size={16} />, label: t('settings.tabs.project'), color: 'text-blue-400',   dependOfProject: true  },
+    { id: 'history',   icon: <History size={16} />, label: t('settings.tabs.history'), color: 'text-purple-400', dependOfProject: true  },
+    { id: 'wannacut',  icon: <Cpu size={16} />,    label: t('settings.tabs.system'),  color: 'text-cyan-400',   dependOfProject: false },
   ];
 
   // Filtramos as opções que podem ser exibidas
@@ -328,7 +340,7 @@ const executeRestore = async () => {
             {activeTab === 'project' && isProjectLoaded && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="space-y-1.5">
-                  <label className="text-zinc-500 text-[9px] font-bold uppercase tracking-widest">Project Name</label>
+                  <label className="text-zinc-500 text-[9px] font-bold uppercase tracking-widest">{t('settings.projectName')}</label>
                   <input 
                     type="text"
                     className="w-full bg-white/5 border border-white/10 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500/40 transition-all"
@@ -339,7 +351,7 @@ const executeRestore = async () => {
 
                 <div className="space-y-3">
                   <label className="text-zinc-500 text-[9px] font-bold uppercase tracking-widest flex items-center gap-2">
-                    <Monitor size={12} /> Format Presets
+                    <Monitor size={12} /> {t('settings.formatPresets')}
                   </label>
                   <div className="grid grid-cols-1 gap-2">
                     {presets.map((p) => (
@@ -361,7 +373,7 @@ const executeRestore = async () => {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <span className="text-zinc-600 text-[9px] uppercase font-bold">Width</span>
+                    <span className="text-zinc-600 text-[9px] uppercase font-bold">{t('settings.width')}</span>
                     <input 
                       type="number" 
                       className="w-full bg-white/5 border border-white/10 rounded px-3 py-1.5 text-xs text-white outline-none"
@@ -370,7 +382,7 @@ const executeRestore = async () => {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <span className="text-zinc-600 text-[9px] uppercase font-bold">Height</span>
+                    <span className="text-zinc-600 text-[9px] uppercase font-bold">{t('settings.height')}</span>
                     <input 
                       type="number" 
                       className="w-full bg-white/5 border border-white/10 rounded px-3 py-1.5 text-xs text-white outline-none"
@@ -382,7 +394,7 @@ const executeRestore = async () => {
 
                 <div className="space-y-4 pt-2">
                   <div className="space-y-1.5">
-                    <label className="text-zinc-500 text-[9px] font-bold uppercase flex items-center gap-2 italic"><Film size={12} /> Frame Rate</label>
+                    <label className="text-zinc-500 text-[9px] font-bold uppercase flex items-center gap-2 italic"><Film size={12} /> {t('settings.frameRate')}</label>
                     <select 
                       className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white outline-none"
                       value={projSettings.fps}
@@ -395,7 +407,7 @@ const executeRestore = async () => {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-zinc-500 text-[9px] font-bold uppercase flex items-center gap-2 italic"><Music size={12} /> Sample Rate</label>
+                    <label className="text-zinc-500 text-[9px] font-bold uppercase flex items-center gap-2 italic"><Music size={12} /> {t('settings.sampleRate')}</label>
                     <select 
                       className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white outline-none"
                       value={projSettings.sampleRate}
@@ -414,7 +426,7 @@ const executeRestore = async () => {
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 text-cyan-500/70">
                     <Cpu size={14} />
-                    <h3 className="text-[9px] font-black uppercase tracking-widest">Hardware</h3>
+                    <h3 className="text-[9px] font-black uppercase tracking-widest">{t('settings.hardware')}</h3>
                   </div>
                   <div className="p-4 rounded border border-white/5 bg-white/2 space-y-3">
                     <select 
@@ -439,7 +451,7 @@ const executeRestore = async () => {
                     {(!wannacutSettings.gpu || wannacutSettings.gpu ==  "null" ) && (
                           <div className="flex gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] leading-relaxed italic">
                             <AlertTriangle size={24} className="shrink-0" />
-                            <p>Warning: Without hardware acceleration, advanced tools like "Background Removal" and "Vocal Extraction" will be disabled or significantly slower.</p>
+                            <p>{t('settings.noGpuWarning')}</p>
                           </div>
                       )}
                   </div>
@@ -447,27 +459,35 @@ const executeRestore = async () => {
 
                 <section className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-zinc-600 text-[8px] font-bold uppercase italic">Settings Folder</label>
+                    <label className="text-zinc-600 text-[8px] font-bold uppercase italic">{t('settings.settingsFolder')}</label>
                     <button onClick={() => handleSelectFolder('settings')} className="w-full flex justify-between bg-white/2 border border-white/5 px-3 py-2 rounded text-[10px] hover:bg-white/5 transition-all text-zinc-400">
-                      <span className="truncate max-w-[180px]">{localStorage.getItem("wannacut_settings_folder") || 'Set folder...'}</span>
+                      <span className="truncate max-w-[180px]">{localStorage.getItem("wannacut_settings_folder") || t('settings.setFolder')}</span>
                       <FolderEdit size={12} />
                     </button>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-zinc-600 text-[8px] font-bold uppercase italic">Workspace Root</label>
+                    <label className="text-zinc-600 text-[8px] font-bold uppercase italic">{t('settings.workspaceRoot')}</label>
                     <button onClick={() => handleSelectFolder('workspace')} className="w-full flex justify-between bg-white/2 border border-white/5 px-3 py-2 rounded text-[10px] hover:bg-white/5 transition-all text-zinc-400">
-                      <span className="truncate max-w-[180px]">{wannacutSettings.workspace || 'Set workspace...'}</span>
+                      <span className="truncate max-w-[180px]">{wannacutSettings.workspace || t('settings.setWorkspace')}</span>
                       <FolderEdit size={12} />
                     </button>
+                  </div>
+
+
+                  <div className="space-y-1.5">
+                    <label className="text-zinc-600 text-[8px] font-bold uppercase italic">{t('settings.selectLang')}</label>
+                    <div>
+                      <select value={i18n.language} onChange={e => change(e.target.value)}>
+                      {langs.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                    </select>
+                    </div>
                   </div>
                 </section>
 
 
 
 
-                 <select value={i18n.language} onChange={e => change(e.target.value)}>
-                  {langs.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-                </select>
+                 
               </div>
             )}
 
@@ -476,20 +496,20 @@ const executeRestore = async () => {
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="flex items-center gap-2 text-purple-500/70">
                     <History size={14} />
-                    <h3 className="text-[9px] font-black uppercase tracking-widest">Backup History Logs</h3>
+                    <h3 className="text-[9px] font-black uppercase tracking-widest">{t('settings.backupHistoryLogs')}</h3>
                   </div>
                   
                   <p className="text-zinc-500 text-[10px] italic leading-relaxed">
-                    Select a historical auto-save version below to restore the timeline and configurations to that specific state.
+                    {t('settings.historyDescription')}
                   </p>
 
                   {isLoadingHistory ? (
                     <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">
-                      Reading backup filesystem...
+                      {t('settings.readingBackup')}
                     </div>
                   ) : historyFiles.length === 0 ? (
                     <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest border border-dashed border-white/5 rounded-lg bg-white/1">
-                      No history files found for this project.
+                      {t('settings.noHistoryFiles')}
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1 custom-scrollbar">
@@ -510,7 +530,7 @@ const executeRestore = async () => {
                               </div>
                             </div>
                             <span className="text-[8px] font-black uppercase tracking-widest bg-zinc-900 border border-white/10 text-zinc-500 group-hover:border-purple-500/40 group-hover:text-purple-400 px-2 py-1 rounded transition-all">
-                              Restore Version
+                              {t('settings.restoreVersion')}
                             </span>
                           </button>
                         );
@@ -531,13 +551,13 @@ const executeRestore = async () => {
               }}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black uppercase tracking-[0.2em] rounded transition-all shadow-lg shadow-blue-900/10"
             >
-              Apply Changes
+              {t('settings.applyChanges')}
             </button>
             <button 
               onClick={onClose}
               className="w-full py-2 text-[9px] font-bold uppercase tracking-widest text-zinc-600 hover:text-zinc-200 transition-all"
             >
-              Dismiss
+              {t('settings.dismiss')}
             </button>
           </footer>
         </main>
@@ -556,16 +576,16 @@ const executeRestore = async () => {
               <div className="flex items-center gap-3 text-red-400">
                 <AlertTriangle size={20} className="shrink-0 animate-pulse" />
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">
-                  Confirm Version Restore
+                  {t('settings.confirmRestore')}
                 </h3>
               </div>
 
               <div className="space-y-2">
                 <p className="text-zinc-400 text-[10px] leading-relaxed">
-                  Are you sure you want to roll back the project to this state? Any unsaved changes in your current timeline session will be permanently lost.
+                  {t('settings.confirmRestoreDesc')}
                 </p>
                 <div className="bg-black/40 border border-white/5 rounded p-2 text-[9px] font-mono text-zinc-500 truncate">
-                  Target: {pendingRestoreFile}
+                  {t('settings.target')}: {pendingRestoreFile}
                 </div>
               </div>
 
@@ -574,13 +594,13 @@ const executeRestore = async () => {
                   onClick={executeRestore}
                   className="flex-1 py-2 bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 text-red-400 text-[9px] font-black uppercase tracking-widest rounded transition-all"
                 >
-                  Confirm Restore
+                  {t('settings.confirmRestoreBtn')}
                 </button>
                 <button
                   onClick={() => setPendingRestoreFile(null)}
                   className="flex-1 py-2 bg-zinc-900 hover:bg-zinc-800 border border-white/5 text-zinc-400 text-[9px] font-black uppercase tracking-widest rounded transition-all"
                 >
-                  Cancel
+                  {t('settings.cancel')}
                 </button>
               </div>
             </motion.div>
