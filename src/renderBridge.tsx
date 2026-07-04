@@ -249,11 +249,16 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       const flipped = flipVertical(pixelBuffer, W, H);
       auxCtx.putImageData(new ImageData(new Uint8ClampedArray(flipped), W, H), 0, 0);
 
+      console.log('render frame start');
+
       await invoke("save_export_frame", {
         projectPath: currentProjectPath,
         frameIndex:  frameIdx,
         pngBase64:   auxCanvas.toDataURL("image/png"),
       });
+
+      console.log('render frame ending');
+
 
       onProgress?.(Math.floor((frameIdx / totalFrames) * 70));
     }
