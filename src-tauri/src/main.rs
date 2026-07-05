@@ -1863,6 +1863,35 @@ async fn get_image_data(path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, b64))
 }
 
+/// Lê um arquivo de áudio e devolve como data URL em base64.
+///
+/// Usado no lugar de convertFileSrc()/asset:// para o preview de áudio em
+/// AudioRef2: alguns nomes de arquivo com caracteres Unicode (ex: "：" fullwidth
+/// colon, "–" en-dash) fazem o protocolo asset:// do Tauri falhar silenciosamente
+/// no <audio> com MEDIA_ERR_SRC_NOT_SUPPORTED, mesmo com o arquivo existindo e o
+/// path/scope corretos. Como aqui o nome do arquivo nunca entra numa URL — ele
+/// viaja como argumento de invoke() —, o problema não ocorre.
+#[tauri::command]
+async fn get_audio_data(path: String) -> Result<String, String> {
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    let b64 = general_purpose::STANDARD.encode(bytes);
+
+    let lower = path.to_lowercase();
+    let mime = if lower.ends_with(".wav") {
+        "audio/wav"
+    } else if lower.ends_with(".m4a") {
+        "audio/mp4"
+    } else if lower.ends_with(".ogg") {
+        "audio/ogg"
+    } else if lower.ends_with(".flac") {
+        "audio/flac"
+    } else {
+        "audio/mpeg"
+    };
+
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
 #[tauri::command]
 fn move_file(source: String, destination: String) -> Result<String, String> {
     let src_path = Path::new(&source);
@@ -2130,71 +2159,196 @@ fn send_notification_system(title: String, body: String) {
 
 fn main() {
     thread::spawn(move || {
-        let server = Server::http("127.0.0.1:1234").unwrap();
+        // Somente estas origens (o próprio app Tauri) podem receber resposta deste
+        // servidor local. Isso substitui o antigo "Access-Control-Allow-Origin: *",
+        // que permitia que QUALQUER site aberto no navegador do usuário lesse
+        // arquivos locais via fetch() enquanto o WannaCut estivesse aberto.
+        const ALLOWED_ORIGINS: [&str; 4] = [
+            "tauri://localhost",       // produção (macOS/Linux)
+            "http://tauri.localhost",  // produção (Windows/WebView2)
+            "https://tauri.localhost",
+            "http://localhost:1420",   // dev server (ajuste se sua porta do Vite for outra)
+        ];
+
+        // Só arquivos de mídia usados pelo editor podem ser servidos. Mesmo que um
+        // caminho arbitrário seja pedido, arquivos fora dessa lista (ex: chaves SSH,
+        // .env, arquivos de configuração) nunca são retornados.
+        const ALLOWED_EXTENSIONS: [&str; 10] =
+            ["mp3", "wav", "m4a", "ogg", "flac", "mp4", "mov", "webm", "avi", "mkv"];
+
+        let server = match Server::http("127.0.0.1:1234") {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Falha ao iniciar servidor local de mídia: {}", e);
+                return;
+            }
+        };
+
         for request in server.incoming_requests() {
+            // --- 1) Validação de origem no servidor ---
+            // Requisições sem header Origin (ex: <video src> carregado pelo próprio
+            // WebView) são aceitas; requisições com Origin precisam bater com a
+            // allowlist. Isso bloqueia a requisição antes mesmo de tocar no disco,
+            // em vez de depender só do navegador respeitar o header de CORS.
+            let origin_header = request
+                .headers()
+                .iter()
+                .find(|h| h.field.as_str().to_ascii_lowercase() == "origin")
+                .map(|h| h.value.as_str().to_string());
+
+            let origin_allowed = match &origin_header {
+                None => true,
+                Some(origin) => ALLOWED_ORIGINS.contains(&origin.as_str()),
+            };
+
+            if !origin_allowed {
+                let _ = request.respond(Response::from_string("Forbidden").with_status_code(403));
+                continue;
+            }
+
+            // --- 2) Resolução e validação do path ---
             let url = request.url().trim_start_matches('/');
             let decoded_path = percent_encoding::percent_decode_str(url)
                 .decode_utf8_lossy()
                 .into_owned();
-            let path = Path::new(&decoded_path);
 
-            if path.exists() && path.is_file() {
-                let mut file = File::open(&path).unwrap();
-                let metadata = file.metadata().unwrap();
-                let file_size = metadata.len();
+            // canonicalize() resolve "..", symlinks etc. Se o caminho não existir ou
+            // não puder ser resolvido, cai fora sem revelar detalhes do erro.
+            let canonical_path = match Path::new(&decoded_path).canonicalize() {
+                Ok(p) if p.is_file() => p,
+                _ => {
+                    let _ =
+                        request.respond(Response::from_string("Not Found").with_status_code(404));
+                    continue;
+                }
+            };
 
-                // Lógica de Range Header
-                let range_header = request
-                    .headers()
-                    .iter()
-                    .find(|h| h.field.as_str().to_ascii_lowercase() == "range")
-                    .map(|h| h.value.as_str());
+            let extension_lower = canonical_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase());
 
-                let mut response = if let Some(range) = range_header {
-                    // Parse range: "bytes=start-end"
-                    let range = range.replace("bytes=", "");
-                    let parts: Vec<&str> = range.split('-').collect();
-                    let start = parts[0].parse::<u64>().unwrap_or(0);
-                    let end = if parts.len() > 1 && !parts[1].is_empty() {
-                        parts[1].parse::<u64>().unwrap_or(file_size - 1)
-                    } else {
-                        file_size - 1
-                    };
+            let extension_ok = extension_lower
+                .as_deref()
+                .map(|e| ALLOWED_EXTENSIONS.contains(&e))
+                .unwrap_or(false);
 
-                    let length = end - start + 1;
-                    file.seek(SeekFrom::Start(start)).unwrap();
-                    let mut buffer = vec![0; length as usize];
-                    file.read_exact(&mut buffer).unwrap();
-
-                    let mut res = Response::from_data(buffer).with_status_code(206);
-                    res.add_header(
-                        Header::from_bytes(
-                            &b"Content-Range"[..],
-                            format!("bytes {}-{}/{}", start, end, file_size).as_bytes(),
-                        )
-                        .unwrap(),
-                    );
-                    res
-                } else {
-                    let mut buffer = Vec::new();
-                    file.read_to_end(&mut buffer).unwrap();
-                    Response::from_data(buffer).with_status_code(200)
-                };
-
-                // Headers Obrigatórios
-                response.add_header(
-                    Header::from_bytes(&b"Content-Type"[..], &b"audio/mpeg"[..]).unwrap(),
-                );
-                response.add_header(
-                    Header::from_bytes(&b"Access-Control-Allow-Origin\""[..], &b"*"[..]).unwrap(),
-                );
-                response
-                    .add_header(Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap());
-
-                let _ = request.respond(response);
-            } else {
+            if !extension_ok {
                 let _ = request.respond(Response::from_string("Not Found").with_status_code(404));
+                continue;
             }
+
+            let path = canonical_path;
+
+            // --- 3) Leitura e resposta, com tratamento de erro em vez de unwrap() ---
+            // (requisições malformadas não derrubam mais a thread do servidor)
+            let mut file = match File::open(&path) {
+                Ok(f) => f,
+                Err(_) => {
+                    let _ = request
+                        .respond(Response::from_string("Internal Server Error").with_status_code(500));
+                    continue;
+                }
+            };
+
+            let file_size = match file.metadata() {
+                Ok(m) => m.len(),
+                Err(_) => {
+                    let _ = request
+                        .respond(Response::from_string("Internal Server Error").with_status_code(500));
+                    continue;
+                }
+            };
+
+            let content_type = match extension_lower.as_deref() {
+                Some("mp3") => "audio/mpeg",
+                Some("wav") => "audio/wav",
+                Some("m4a") => "audio/mp4",
+                Some("ogg") => "audio/ogg",
+                Some("flac") => "audio/flac",
+                Some("mp4") => "video/mp4",
+                Some("mov") => "video/quicktime",
+                Some("webm") => "video/webm",
+                Some("avi") => "video/x-msvideo",
+                Some("mkv") => "video/x-matroska",
+                _ => "application/octet-stream",
+            };
+
+            // Lógica de Range Header
+            let range_header = request
+                .headers()
+                .iter()
+                .find(|h| h.field.as_str().to_ascii_lowercase() == "range")
+                .map(|h| h.value.as_str().to_string());
+
+            let mut response = if let Some(range) = range_header {
+                // Parse range: "bytes=start-end"
+                let range = range.replace("bytes=", "");
+                let parts: Vec<&str> = range.split('-').collect();
+                let start = parts.get(0).and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+                let end = parts
+                    .get(1)
+                    .filter(|p| !p.is_empty())
+                    .and_then(|p| p.parse::<u64>().ok())
+                    .unwrap_or(file_size.saturating_sub(1))
+                    .min(file_size.saturating_sub(1));
+
+                if file_size == 0 || start > end || file.seek(SeekFrom::Start(start)).is_err() {
+                    let _ = request.respond(
+                        Response::from_string("Range Not Satisfiable").with_status_code(416),
+                    );
+                    continue;
+                }
+
+                let length = end - start + 1;
+                let mut buffer = vec![0; length as usize];
+                if file.read_exact(&mut buffer).is_err() {
+                    let _ = request.respond(
+                        Response::from_string("Internal Server Error").with_status_code(500),
+                    );
+                    continue;
+                }
+
+                let mut res = Response::from_data(buffer).with_status_code(206);
+                if let Ok(h) = Header::from_bytes(
+                    &b"Content-Range"[..],
+                    format!("bytes {}-{}/{}", start, end, file_size).as_bytes(),
+                ) {
+                    res.add_header(h);
+                }
+                res
+            } else {
+                let mut buffer = Vec::new();
+                if file.read_to_end(&mut buffer).is_err() {
+                    let _ = request.respond(
+                        Response::from_string("Internal Server Error").with_status_code(500),
+                    );
+                    continue;
+                }
+                Response::from_data(buffer).with_status_code(200)
+            };
+
+            // Headers Obrigatórios
+            response.add_header(
+                Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap(),
+            );
+
+            // Nunca "*": só ecoa a origem de volta se ela estiver na allowlist.
+            if let Some(origin) = origin_header
+                .as_deref()
+                .filter(|o| ALLOWED_ORIGINS.contains(o))
+            {
+                if let Ok(h) =
+                    Header::from_bytes(&b"Access-Control-Allow-Origin"[..], origin.as_bytes())
+                {
+                    response.add_header(h);
+                }
+            }
+
+            response
+                .add_header(Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap());
+
+            let _ = request.respond(response);
         }
     });
 
@@ -2457,6 +2611,7 @@ fn main() {
             transfer_folder_content,
             list_fonts,
             get_image_data,
+            get_audio_data,
             check_notifications,
             download_font_file,
             fetch_cloud_fonts,

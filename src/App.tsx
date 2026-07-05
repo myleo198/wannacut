@@ -3967,15 +3967,41 @@ const canvasRef2 = useRef<HTMLCanvasElement>(null);
       if (audioRef2.current) {
         const audioEl = audioRef2.current;
         const audio = `${sourceAsset.name.split('.').slice(0, -1).join('.')}.mp3`;
-        const path = knowTypeByAssetName(sourceAsset.name) === 'video'
-          ? `http://127.0.0.1:1234/${encodeURIComponent(`${currentProjectPath}/extracted_audios/${audio}`)}`
-          : `http://127.0.0.1:1234/${encodeURIComponent(`${currentProjectPath}/videos/${sourceAsset.name}`)}`;
+        const audioFilePath = knowTypeByAssetName(sourceAsset.name) === 'video'
+          ? `${currentProjectPath}/extracted_audios/${audio}`
+          : `${currentProjectPath}/videos/${sourceAsset.name}`;
 
-        const handleError = () => { hasAudio2.current = false; };
+        let cancelled = false;
+
+        const handleError = () => {
+          console.error('[audioRef2] falhou ao decodificar áudio', {
+            audioFilePath,
+            errorCode: audioEl.error?.code,
+          });
+          hasAudio2.current = false;
+        };
         audioEl.addEventListener('error', handleError);
-        audioEl.src = path;
 
-        return () => { audioEl.removeEventListener('error', handleError); };
+        // Antes: convertFileSrc(audioFilePath) -> asset://localhost/...
+        // Alguns nomes de arquivo com caracteres Unicode (ex: "：" fullwidth colon,
+        // "–" en-dash) fazem o protocolo asset:// falhar silenciosamente com
+        // MEDIA_ERR_SRC_NOT_SUPPORTED mesmo com o arquivo existindo. Lendo os bytes
+        // via invoke() e usando um data URL, o nome do arquivo nunca entra numa URL
+        // e o problema desaparece.
+        invoke<string>('get_audio_data', { path: audioFilePath })
+          .then(dataUrl => {
+            if (cancelled) return;
+            audioEl.src = dataUrl;
+          })
+          .catch((err) => {
+            console.error('[audioRef2] falhou ao ler arquivo de áudio', { audioFilePath, err });
+            if (!cancelled) hasAudio2.current = false;
+          });
+
+        return () => {
+          cancelled = true;
+          audioEl.removeEventListener('error', handleError);
+        };
       }
     }, [sourceAsset]);
 
