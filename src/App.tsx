@@ -530,39 +530,52 @@ const timelineTransitionsRef = useRef<TimelineTransition[]>([]);
 const pasteEffects = (target_clip:Clip) => 
 {
 
-
+    // 1. Efeitos (array de objetos) — se o clipe alvo já tiver um efeito com
+    // o mesmo `name` do que está sendo colado, apaga o antigo primeiro e
+    // só então coloca o novo no lugar. Os demais efeitos atuais (que não
+    // colidem) são preservados.
     if (copiedEffects.effects) {
-      // effects é um array de objetos — mantemos array. Efeitos colados
-      // substituem os existentes de mesmo `name` (os novos ganham),
-      // e os demais efeitos atuais são preservados.
       const existingEffects = target_clip.effects ? target_clip.effects : [];
       const copiedNames = new Set(copiedEffects.effects.map((e: any) => e.name));
-      const keptEffects = existingEffects.map((e: any) => !copiedNames.has(e.name));
+      const keptEffects = existingEffects.filter((e: any) => !copiedNames.has(e.name));
       target_clip.effects = [...keptEffects, ...copiedEffects.effects];
     }
 
-    // 2. Merge de Keyframes
+    // 2. Keyframes (propriedades) — cada propriedade colada (volume, opacity,
+    // speed, rotation3d, position, zoom, mask.*) apaga a keyframe antiga da
+    // mesma propriedade e coloca a nova no lugar. Propriedades não coladas
+    // são preservadas.
     if (copiedEffects.keyframes) {
-      target_clip.keyframes = {
-        ...target_clip.keyframes,
-        ...copiedEffects.keyframes
-      };
+      const existingKeyframes = target_clip.keyframes ? { ...target_clip.keyframes } : {};
+      for (const key of Object.keys(copiedEffects.keyframes)) {
+        // apaga a antiga (se existir) antes de colocar a nova
+        delete (existingKeyframes as any)[key];
+        (existingKeyframes as any)[key] = copiedEffects.keyframes[key];
+      }
+      target_clip.keyframes = existingKeyframes;
     }
 
+    // 3. Fade in/out (vídeo e imagem) — apaga o valor antigo e coloca o novo.
+    if (copiedEffects.fadein !== undefined) {
+      delete target_clip.fadein;
+      target_clip.fadein = copiedEffects.fadein;
+    }
 
-    if(copiedEffects.fadein)  
-      target_clip.fadein = copiedEffects.fadein
+    if (copiedEffects.fadeout !== undefined) {
+      delete target_clip.fadeout;
+      target_clip.fadeout = copiedEffects.fadeout;
+    }
 
+    // 4. Fade in/out de áudio — apaga o valor antigo e coloca o novo.
+    if (copiedEffects.fadeinAudio !== undefined) {
+      delete target_clip.fadeinAudio;
+      target_clip.fadeinAudio = copiedEffects.fadeinAudio;
+    }
 
-    if(copiedEffects.fadeout)  
-      target_clip.fadeout = copiedEffects.fadeout
-
-
-    if(copiedEffects.fadeinAudio)  
-      target_clip.fadeinAudio = copiedEffects.fadeinAudio
-
-    if(copiedEffects.fadeoutAudio)  
-      target_clip.fadeoutAudio = copiedEffects.fadeoutAudio
+    if (copiedEffects.fadeoutAudio !== undefined) {
+      delete target_clip.fadeoutAudio;
+      target_clip.fadeoutAudio = copiedEffects.fadeoutAudio;
+    }
 
 
 
@@ -585,29 +598,49 @@ const pasteEffectsTrack = (target_track: number) => {
       // Cria uma cópia do clipe para mutar com segurança
       const updatedClip = { ...clip };
 
-      // 1. Merge de Efeitos (Array de objetos)
+      // 1. Efeitos (array de objetos) — se o clipe já tiver um efeito com o
+      // mesmo `name` do que está sendo colado, apaga o antigo primeiro e só
+      // então coloca o novo. Os demais efeitos atuais são preservados.
       if (copiedEffects.effects) {
-        updatedClip.effects = [
-          ...(updatedClip.effects || []), // Mantém os existentes
-          ...copiedEffects.effects        // Adiciona os novos
-        ];
+        const existingEffects = updatedClip.effects || [];
+        const copiedNames = new Set(copiedEffects.effects.map((e: any) => e.name));
+        const keptEffects = existingEffects.filter((e: any) => !copiedNames.has(e.name));
+        updatedClip.effects = [...keptEffects, ...copiedEffects.effects];
       }
 
-      // 2. Merge de Keyframes (Objeto)
+      // 2. Keyframes (propriedades) — cada propriedade colada apaga a
+      // keyframe antiga da mesma propriedade e coloca a nova no lugar.
+      // Propriedades não coladas são preservadas.
       if (copiedEffects.keyframes) {
-        updatedClip.keyframes = {
-          ...(updatedClip.keyframes || {}), // Mantém os existentes
-          ...copiedEffects.keyframes        // Sobrescreve com os novos
-        };
+        const existingKeyframes = updatedClip.keyframes ? { ...updatedClip.keyframes } : {};
+        for (const key of Object.keys(copiedEffects.keyframes)) {
+          delete (existingKeyframes as any)[key];
+          (existingKeyframes as any)[key] = copiedEffects.keyframes[key];
+        }
+        updatedClip.keyframes = existingKeyframes;
       }
 
-      // 3. Fades (Simples atribuição)
-      /*
-      if (copiedEffects.fadein) updatedClip.fadein = copiedEffects.fadein;
-      if (copiedEffects.fadeout) updatedClip.fadeout = copiedEffects.fadeout;
-      if (copiedEffects.fadeinAudio) updatedClip.fadeinAudio = copiedEffects.fadeinAudio;
-      if (copiedEffects.fadeoutAudio) updatedClip.fadeoutAudio = copiedEffects.fadeoutAudio;
-      */
+      // 3. Fade in/out (vídeo e imagem) — apaga o valor antigo e coloca o novo.
+      if (copiedEffects.fadein !== undefined) {
+        delete updatedClip.fadein;
+        updatedClip.fadein = copiedEffects.fadein;
+      }
+
+      if (copiedEffects.fadeout !== undefined) {
+        delete updatedClip.fadeout;
+        updatedClip.fadeout = copiedEffects.fadeout;
+      }
+
+      // 4. Fade in/out de áudio — apaga o valor antigo e coloca o novo.
+      if (copiedEffects.fadeinAudio !== undefined) {
+        delete updatedClip.fadeinAudio;
+        updatedClip.fadeinAudio = copiedEffects.fadeinAudio;
+      }
+
+      if (copiedEffects.fadeoutAudio !== undefined) {
+        delete updatedClip.fadeoutAudio;
+        updatedClip.fadeoutAudio = copiedEffects.fadeoutAudio;
+      }
 
       return updatedClip;
     })
