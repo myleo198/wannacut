@@ -532,10 +532,13 @@ const pasteEffects = (target_clip:Clip) =>
 
 
     if (copiedEffects.effects) {
-      target_clip.effects = {
-        ...target_clip.effects, // Mantém os efeitos atuais
-        ...copiedEffects.effects // Sobrescreve/Adiciona os novos (os novos ganham se houver conflito de chave)
-      };
+      // effects é um array de objetos — mantemos array. Efeitos colados
+      // substituem os existentes de mesmo `name` (os novos ganham),
+      // e os demais efeitos atuais são preservados.
+      const existingEffects = target_clip.effects ? target_clip.effects : [];
+      const copiedNames = new Set(copiedEffects.effects.map((e: any) => e.name));
+      const keptEffects = existingEffects.map((e: any) => !copiedNames.has(e.name));
+      target_clip.effects = [...keptEffects, ...copiedEffects.effects];
     }
 
     // 2. Merge de Keyframes
@@ -2810,7 +2813,7 @@ const handlePaste = () => {
 
     // 4. Track search logic: 
     // Increment only if there is ACTUALLY something occupying the same time slot and track
-    while (isOccupied(targetTrack, targetStart, originalClip.duration)) {
+    while (isOccupied(targetTrack, currentTime, originalClip.duration)) {
       targetTrack++;
     }
 
@@ -2818,7 +2821,7 @@ const handlePaste = () => {
     const pastedClip: Clip = {
       ...originalClip,
       id: newClipId,
-      start: targetStart, // Apply the calculated time here
+      start: currentTime, // Apply the calculated time here
       trackId: targetTrack
     };
 
@@ -5582,17 +5585,14 @@ const handleSpeedKeyframeChange = (clip: Clip) => {
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
-useEffect(() => {
-  if (selectedClipIds.length !== 1) return;
-
-  const selectedClip = clips.find(c => c.id === selectedClipIds[0]);
-  if (!selectedClip) return;
-
-  handleSpeedKeyframeChange(selectedClip);
-
-}, [JSON.stringify(clips.find(c => c.id === selectedClipIds[0])?.keyframes?.speed)]);
-
-//JSON.stringify(clips.find(c => c.id === selectedClipIds[0])?.keyframes?.speed)
+// NOTA: useEffect de recálculo de duration ao trocar seleção foi removido.
+// Ele disparava sempre que `selectedClipIds[0]` mudava para um clip com
+// keyframes de speed diferentes do clip selecionado anteriormente (já que a
+// dependência era o JSON.stringify desses keyframes), recalculando a duration
+// mesmo sem nenhuma edição real — o que fazia o clip "esticar" visualmente ao
+// simplesmente clicar nele. O recálculo de duration já é feito nos pontos
+// corretos, onde o speed é de fato alterado: handleKeyframeDrag, deleteKeyframe
+// e addKeyframe (todos chamam handleSpeedKeyframeChange diretamente).
 
 
 
@@ -7456,6 +7456,57 @@ return (
                           </>
                         )}
 
+                        {(contextMenu) && ( 
+                        
+                        
+                        <>
+                        
+                        
+                        
+                        
+                        <button 
+                              onClick={() => {
+                                setcopiedEffects(contextMenu.clip);
+                                setContextMenu(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                            >
+                              <Copy size={14} className="opacity-70" />
+                              <span> {t('timeline.copyEffects')} </span>
+                            </button>
+
+
+                            {
+                              copiedEffects && Object.keys(copiedEffects).length > 0 && 
+
+                                <button 
+                                  onClick={() => {
+                                    pasteEffects(contextMenu.clip);
+                                    setContextMenu(null);
+
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
+                                >
+                                  <ClipboardPaste size={14} className="opacity-70" />
+                                  <span> {t('timeline.pasteEffectsKeyframes')} </span>
+                                </button>
+                            }
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        </>
+                        
+                        
+                        
+                        
+                        )}
+
+
+
 
 
 
@@ -7492,33 +7543,7 @@ return (
 
 
 
-                            <button 
-                              onClick={() => {
-                                setcopiedEffects(contextMenu.clip);
-                                setContextMenu(null);
-                              }}
-                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
-                            >
-                              <Copy size={14} className="opacity-70" />
-                              <span> {t('timeline.copyEffects')} </span>
-                            </button>
-
-
-                            {
-                              copiedEffects && Object.keys(copiedEffects).length > 0 && 
-
-                                <button 
-                                  onClick={() => {
-                                    pasteEffects(contextMenu.clip);
-                                    setContextMenu(null);
-
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-violet-600 hover:text-white transition-colors flex items-center gap-3"
-                                >
-                                  <ClipboardPaste size={14} className="opacity-70" />
-                                  <span> {t('timeline.pasteEffectsKeyframes')} </span>
-                                </button>
-                            }
+                            
 
                             </>
                             )

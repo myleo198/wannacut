@@ -49,6 +49,8 @@ pub struct ExportState(pub Mutex<Option<CommandChild>>);
 pub struct YtDlpState(pub Mutex<Option<std::process::Child>>);
 
 pub struct YtDlpPid(pub AtomicU32); // 0 = nenhum processo ativo
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
 
 use wgpu;
 
@@ -1863,35 +1865,6 @@ async fn get_image_data(path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, b64))
 }
 
-/// Lê um arquivo de áudio e devolve como data URL em base64.
-///
-/// Usado no lugar de convertFileSrc()/asset:// para o preview de áudio em
-/// AudioRef2: alguns nomes de arquivo com caracteres Unicode (ex: "：" fullwidth
-/// colon, "–" en-dash) fazem o protocolo asset:// do Tauri falhar silenciosamente
-/// no <audio> com MEDIA_ERR_SRC_NOT_SUPPORTED, mesmo com o arquivo existindo e o
-/// path/scope corretos. Como aqui o nome do arquivo nunca entra numa URL — ele
-/// viaja como argumento de invoke() —, o problema não ocorre.
-#[tauri::command]
-async fn get_audio_data(path: String) -> Result<String, String> {
-    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    let b64 = general_purpose::STANDARD.encode(bytes);
-
-    let lower = path.to_lowercase();
-    let mime = if lower.ends_with(".wav") {
-        "audio/wav"
-    } else if lower.ends_with(".m4a") {
-        "audio/mp4"
-    } else if lower.ends_with(".ogg") {
-        "audio/ogg"
-    } else if lower.ends_with(".flac") {
-        "audio/flac"
-    } else {
-        "audio/mpeg"
-    };
-
-    Ok(format!("data:{};base64,{}", mime, b64))
-}
-
 #[tauri::command]
 fn move_file(source: String, destination: String) -> Result<String, String> {
     let src_path = Path::new(&source);
@@ -2155,6 +2128,37 @@ fn send_notification_system(title: String, body: String) {
         .arg(&body)
         .spawn()
         .ok();
+}
+
+
+
+#[tauri::command]
+fn get_audio_data(path: String) -> Result<String, String> {
+    let file_path = Path::new(&path);
+
+    if !file_path.exists() {
+        return Err(format!("Arquivo não encontrado: {}", path));
+    }
+
+    let bytes = fs::read(file_path)
+        .map_err(|e| format!("Erro ao ler arquivo '{}': {}", path, e))?;
+
+    let mime = match file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+    {
+        Some(ext) if ext == "mp3" => "audio/mpeg",
+        Some(ext) if ext == "wav" => "audio/wav",
+        Some(ext) if ext == "ogg" => "audio/ogg",
+        Some(ext) if ext == "m4a" => "audio/mp4",
+        Some(ext) if ext == "flac" => "audio/flac",
+        Some(ext) if ext == "aac" => "audio/aac",
+        _ => "application/octet-stream",
+    };
+
+    let base64_data = BASE64.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, base64_data))
 }
 
 fn main() {
@@ -2611,7 +2615,6 @@ fn main() {
             transfer_folder_content,
             list_fonts,
             get_image_data,
-            get_audio_data,
             check_notifications,
             download_font_file,
             fetch_cloud_fonts,
@@ -2630,6 +2633,7 @@ fn main() {
             download_pexels_video,
             read_pexels_api_key,
             save_pexels_api_key,
+            get_audio_data,
             plans::activate_license,
             plans::get_license_state,
             plans::deactivate_license,
