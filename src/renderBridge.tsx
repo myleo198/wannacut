@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
 import { drawFrame as professionalDrawFrame, renderAudioOffline } from "./Render/Render";
+import { buildExportPlan, ExportSegment } from "./Render/exportPlanner";
 
 
 
@@ -18,6 +19,14 @@ export interface RenderEngineContext {
   topAudios: React.MutableRefObject<any[]>;
   isPlaying?: boolean;
   settingsFolder?: string;
+  /**
+   * true quando drawFrame é chamado pelo pipeline de export (renderBridge.tsx).
+   * Durante o export, clips "triviais" nunca chegam aqui — já foram cortados
+   * direto do arquivo fonte pelo exportPlanner. A flag existe pra impedir que
+   * o atalho de preview (vídeo tocando nativamente via <video>/VideoTexture,
+   * ver Render.tsx) seja usado por engano dentro de um render offscreen.
+   */
+  isExport?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,12 +174,33 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
   }
 
   // =========================================================================
-  // CAMINHO B: VÍDEO + ÁUDIO (mp4 / mkv)
-  // Renderiza frames, mix de áudio, depois Rust monta com FFmpeg.
-  // Progresso: 0%→70% (frames) → 85% (áudio) → 100% (assemble)
+  // CAMINHO B: VÍDEO + ÁUDIO (mp4 / mkv) — EXPORT HÍBRIDO
+  //
+  // Em vez de sempre renderizar frame a frame no Three.js, a timeline é
+  // primeiro dividida em segmentos (ver exportPlanner.ts):
+  //   - "simple": um único clip sem keyframes/efeitos/transição/reverse
+  //     ativo no trecho → cortado DIRETO do arquivo fonte via ffmpeg
+  //     (rápido: sem decodificar em canvas, sem IPC por frame, sem Three.js).
+  //   - "complex": qualquer coisa que precise de composição (efeitos,
+  //     transições, camadas sobrepostas, texto, máscara, reverse, speed
+  //     ramp) → cai no pipeline de sempre, frame a frame.
+  //
+  // No final, todos os segmentos (cortes + trechos renderizados) são
+  // concatenados em ordem e o áudio (mixado à parte, como sempre) é
+  // acoplado por cima.
+  //
+  // Progresso: 0%→60% (cortes + frames complexos) → 80% (mix de áudio)
+  //            → 100% (concat + mux final)
   // =========================================================================
-  const totalFrames = Math.ceil(duration * fps);
-  const drawFrame   = await getDrawFrameFunction();
+  const drawFrame = await getDrawFrameFunction();
+
+  const plan = buildExportPlan(clips, timelineTransitions, W, H, duration);
+  console.log(
+    '[Export] plano híbrido:',
+    plan.map(s => s.kind === 'simple'
+      ? `corte[${s.clip.name}] ${s.tStart.toFixed(2)}-${s.tEnd.toFixed(2)}`
+      : `render ${s.tStart.toFixed(2)}-${s.tEnd.toFixed(2)}`),
+  );
 
   const offscreenRenderer = new THREE.WebGLRenderer({
     antialias: false, alpha: false,
@@ -216,74 +246,128 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
     exportScene.background = new THREE.Color((projectConfig as any).backgroundColor);
   }
 
+  // Peso heurístico de progresso: um corte direto (ffmpeg -ss/-t) é MUITO
+  // mais rápido que renderizar frames, mas ainda gasta um tempo não-zero
+  // (spawn do processo, seek, encode). Usamos "peso de N frames" só pra dar
+  // uma barra de progresso monotônica e razoável — não precisa ser exata.
+  const SIMPLE_SEGMENT_WEIGHT_FRAMES = 4;
+  const totalComplexFrames = plan
+    .filter((s): s is Extract<ExportSegment, { kind: 'complex' }> => s.kind === 'complex')
+    .reduce((sum, s) => sum + Math.max(1, Math.round((s.tEnd - s.tStart) * fps)), 0);
+  const totalSimpleSegments = plan.filter(s => s.kind === 'simple').length;
+  const totalWorkUnits = Math.max(
+    1,
+    totalComplexFrames + totalSimpleSegments * SIMPLE_SEGMENT_WEIGHT_FRAMES,
+  );
+  let workUnitsDone = 0;
+  const bumpProgress = () => onProgress?.(Math.min(60, Math.floor((workUnitsDone / totalWorkUnits) * 60)));
+
+  const segmentFiles: string[] = [];
+
   try {
-    // ── Fase B1 (0%→70%): frames ──────────────────────────────────────────
-    for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
-      const t = frameIdx / fps;
+    // ── Fase B1 (0%→60%): cada segmento do plano híbrido ──────────────────
+    for (let segIdx = 0; segIdx < plan.length; segIdx++) {
+      const seg = plan[segIdx];
+      const segFileName = `seg_${String(segIdx).padStart(6, '0')}.mp4`;
 
-      offscreenRenderer.setRenderTarget(renderTarget);
+      if (seg.kind === 'simple') {
+        // ── Corte direto do arquivo fonte, sem passar pelo Three.js ──────
+        const assetStart = (seg.tStart - seg.clip.start) + (seg.clip.beginmoment || 0);
+        const segDuration = seg.tEnd - seg.tStart;
 
-      await drawFrame({
-        time: t, projectConfig, currentProjectPath,
-        sceneRef:    exportSceneRef  as any,
-        rendererRef: { current: offscreenRenderer } as any,
-        cameraRef:   { current: exportCamera }       as any,
-        topClips:    topClipsRef                     as any,
-        groupsRef:   exportGroupsRef                 as any,
-        getInterpolatedValueWithFades, invoke,
-        topAudios:   topAudiosRef                    as any,
-        isPlaying:   false,
-        settingsFolder,
-        timelineTransitions,
-      });
+        console.log(
+          `[Export] segmento ${segIdx}: corte direto de "${seg.clip.name}" ` +
+          `(${segDuration.toFixed(2)}s a partir de ${assetStart.toFixed(2)}s no asset)`,
+        );
 
-      // (Removido) offscreenRenderer.render(exportScene, exportCamera) duplicado:
-      // drawFrame() já termina com rendererRef.current.render(...) internamente
-      // (ver fim de drawFrame em Render.tsx). Renderizar de novo aqui era a MESMA
-      // cena/câmera/renderer sendo desenhada duas vezes por frame, sem efeito
-      // visível — só custava metade do tempo de GPU/CPU à toa.
+        await invoke("cut_clip_segment", {
+          projectPath: currentProjectPath,
+          clipName:    seg.clip.name,
+          assetStart:  Math.max(0, assetStart),
+          duration:    Math.max(0, segDuration),
+          width:  W, height: H, fps,
+          segIndex: segIdx,
+        });
 
-      const pixelBuffer = new Uint8Array(W * H * 4);
-      offscreenRenderer.readRenderTargetPixels(renderTarget, 0, 0, W, H, pixelBuffer);
+        workUnitsDone += SIMPLE_SEGMENT_WEIGHT_FRAMES;
+        bumpProgress();
+      } else {
+        // ── Segmento complexo: render frame a frame, como antes ──────────
+        const segFrameDir = `export_frames/seg_${String(segIdx).padStart(6, '0')}`;
+        const segFrameCount = Math.max(1, Math.round((seg.tEnd - seg.tStart) * fps));
 
-      const flipped = flipVertical(pixelBuffer, W, H);
-      auxCtx.putImageData(new ImageData(new Uint8ClampedArray(flipped), W, H), 0, 0);
+        for (let f = 0; f < segFrameCount; f++) {
+          const t = seg.tStart + f / fps;
 
-      console.log('render frame start');
+          offscreenRenderer.setRenderTarget(renderTarget);
 
-      await invoke("save_export_frame", {
-        projectPath: currentProjectPath,
-        frameIndex:  frameIdx,
-        pngBase64:   auxCanvas.toDataURL("image/png"),
-      });
+          await drawFrame({
+            time: t, projectConfig, currentProjectPath,
+            sceneRef:    exportSceneRef  as any,
+            rendererRef: { current: offscreenRenderer } as any,
+            cameraRef:   { current: exportCamera }       as any,
+            topClips:    topClipsRef                     as any,
+            groupsRef:   exportGroupsRef                 as any,
+            getInterpolatedValueWithFades, invoke,
+            topAudios:   topAudiosRef                    as any,
+            isPlaying:   false,
+            settingsFolder,
+            timelineTransitions,
+            isExport:    true,
+          });
 
-      console.log('render frame ending');
+          // (Removido) offscreenRenderer.render(exportScene, exportCamera) duplicado:
+          // drawFrame() já termina com rendererRef.current.render(...) internamente
+          // (ver fim de drawFrame em Render.tsx).
 
+          const pixelBuffer = new Uint8Array(W * H * 4);
+          offscreenRenderer.readRenderTargetPixels(renderTarget, 0, 0, W, H, pixelBuffer);
 
-      onProgress?.(Math.floor((frameIdx / totalFrames) * 70));
+          const flipped = flipVertical(pixelBuffer, W, H);
+          auxCtx.putImageData(new ImageData(new Uint8ClampedArray(flipped), W, H), 0, 0);
+
+          await invoke("save_export_frame", {
+            projectPath: currentProjectPath,
+            frameIndex:  f,
+            pngBase64:   auxCanvas.toDataURL("image/png"),
+            segmentDir:  segFrameDir,
+          });
+
+          workUnitsDone++;
+          bumpProgress();
+        }
+
+        console.log(`[Export] segmento ${segIdx}: ${segFrameCount} frames renderizados → assemble`);
+
+        await invoke("assemble_frames_segment", {
+          projectPath: currentProjectPath,
+          segIndex: segIdx, fps, width: W, height: H,
+        });
+      }
+
+      segmentFiles.push(segFileName);
     }
 
-    onProgress?.(70);
+    onProgress?.(60);
 
-    // ── Fase B2 (70%→85%): mix de áudio offline ───────────────────────────
+    // ── Fase B2 (60%→80%): mix de áudio offline ───────────────────────────
     await renderAudioOffline(
       audioClips,
       duration,
       currentProjectPath,
       getInterpolatedValueWithFades,
+      (p) => onProgress?.(60 + Math.floor(p * 0.2)),
     );
 
-    onProgress?.(85);
+    onProgress?.(80);
 
-    // ── Fase B3 (85%→100%): Rust monta PNGs + WAV → mp4/mkv ──────────────
-    await invoke("assemble_exported_video", {
+    // ── Fase B3 (80%→100%): Rust concatena os segmentos + acopla o áudio ──
+    await invoke("concat_export_segments", {
       projectPath: currentProjectPath,
       targetPath,
-      fps,
+      segmentFiles,
       duration,
-      width:  W,
-      height: H,
-      codec:  exportCodec,   // 'mp4' | 'mkv'
+      codec: exportCodec, // 'mp4' | 'mkv'
     });
 
     onProgress?.(100);

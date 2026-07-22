@@ -2367,10 +2367,16 @@ fn main() {
         project_path: String,
         frame_index: u32,
         png_base64: String,
+        // Subpasta relativa ao projeto onde salvar (ex.: "export_frames/seg_000002").
+        // Usado pelo export híbrido pra manter os frames de cada segmento
+        // "complexo" separados dos demais. Se omitido, cai no comportamento
+        // antigo ("export_frames" na raiz do projeto).
+        segment_dir: Option<String>,
     ) -> Result<(), String> {
         use base64::{engine::general_purpose, Engine as _};
 
-        let frames_dir = std::path::Path::new(&project_path).join("export_frames");
+        let sub_dir = segment_dir.unwrap_or_else(|| "export_frames".to_string());
+        let frames_dir = std::path::Path::new(&project_path).join(sub_dir);
         std::fs::create_dir_all(&frames_dir)
             .map_err(|e| format!("Erro ao criar pasta de frames: {}", e))?;
 
@@ -2567,6 +2573,268 @@ fn main() {
 
         Ok(())
     }
+
+    // ---------------------------------------------------------------------------
+    // EXPORT HÍBRIDO: corta segmentos triviais direto do arquivo fonte, monta
+    // segmentos "complexos" a partir de PNGs, e concatena tudo no final.
+    // Ver exportPlanner.ts (frontend) pra saber como cada segmento é decidido.
+    // ---------------------------------------------------------------------------
+
+    /// Corta um trecho de um clip DIRETO do arquivo fonte via FFmpeg, sem passar
+    /// pelo pipeline de render frame-a-frame do Three.js. Só é chamado pelo
+    /// frontend para trechos "triviais" (sem keyframe/efeito/transição/reverse).
+    ///
+    /// Usa seek de input (`-ss` antes do `-i`) por velocidade — é o mesmo
+    /// trade-off que qualquer editor "smart render" faz: um pouco menos preciso
+    /// no ponto de corte exato (pode variar por uma fração de frame) em troca de
+    /// não precisar decodificar o arquivo inteiro do zero até o ponto de corte.
+    #[tauri::command]
+    async fn cut_clip_segment(
+        app_handle: tauri::AppHandle,
+        project_path: String,
+        clip_name: String,
+        asset_start: f64,
+        duration: f64,
+        width: u32,
+        height: u32,
+        fps: u32,
+        seg_index: u32,
+    ) -> Result<String, String> {
+        let source_path = std::path::Path::new(&project_path)
+            .join("videos")
+            .join(&clip_name);
+        let segments_dir = std::path::Path::new(&project_path).join("export_segments");
+        std::fs::create_dir_all(&segments_dir)
+            .map_err(|e| format!("Erro ao criar pasta de segmentos: {}", e))?;
+
+        let out_path = segments_dir.join(format!("seg_{:06}.mp4", seg_index));
+
+        let output = app_handle
+            .shell()
+            .command("ffmpeg")
+            .args([
+                "-y",
+                "-ss",
+                &format!("{:.6}", asset_start.max(0.0)),
+                "-i",
+                &source_path.to_string_lossy(),
+                "-t",
+                &format!("{:.6}", duration.max(0.0)),
+                "-vf",
+                &format!("scale={}:{}", width, height),
+                "-r",
+                &fps.to_string(),
+                "-vsync",
+                "cfr",
+                "-an", // áudio é sempre tratado à parte pelo mix offline (renderAudioOffline)
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                &out_path.to_string_lossy(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("FFmpeg (corte de segmento) falhou: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "FFmpeg (corte de segmento {}) erro: {}",
+                seg_index,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        Ok(out_path.to_string_lossy().to_string())
+    }
+
+    /// Monta um segmento "complexo" (renderizado frame-a-frame pelo Three.js)
+    /// a partir dos PNGs já salvos em export_frames/seg_{seg_index}/, no mesmo
+    /// codec/resolução/fps usados pelos segmentos cortados diretamente — assim
+    /// o concat final (concat_export_segments) pode usar `-c copy`.
+    #[tauri::command]
+    async fn assemble_frames_segment(
+        app_handle: tauri::AppHandle,
+        project_path: String,
+        seg_index: u32,
+        fps: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<String, String> {
+        let proj = std::path::Path::new(&project_path);
+        let frames_dir = proj
+            .join("export_frames")
+            .join(format!("seg_{:06}", seg_index));
+        let segments_dir = proj.join("export_segments");
+        std::fs::create_dir_all(&segments_dir)
+            .map_err(|e| format!("Erro ao criar pasta de segmentos: {}", e))?;
+
+        let out_path = segments_dir.join(format!("seg_{:06}.mp4", seg_index));
+        let frame_pattern = frames_dir.join("%06d.png");
+
+        let output = app_handle
+            .shell()
+            .command("ffmpeg")
+            .args([
+                "-y",
+                "-framerate",
+                &fps.to_string(),
+                "-i",
+                &frame_pattern.to_string_lossy(),
+                "-vf",
+                &format!("scale={}:{}", width, height),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                &out_path.to_string_lossy(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("FFmpeg (frames→segmento {}) falhou: {}", seg_index, e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "FFmpeg (frames→segmento {}) erro: {}",
+                seg_index,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        // Os PNGs deste segmento já foram consumidos — libera espaço em disco.
+        let _ = std::fs::remove_dir_all(&frames_dir);
+
+        Ok(out_path.to_string_lossy().to_string())
+    }
+
+    /// Último passo do export híbrido: concatena todos os segmentos (cortes
+    /// diretos + renders montados) em ordem de timeline e acopla o áudio já
+    /// mixado pelo frontend (export_audio_mix.wav), igual ao passo 2 de
+    /// assemble_exported_video.
+    ///
+    /// Como todo segmento é gerado com o MESMO codec/resolução/fps (ver
+    /// cut_clip_segment e assemble_frames_segment acima), o concat pode usar
+    /// `-c copy` — não recodifica nada, é essencialmente instantâneo.
+    #[tauri::command]
+    async fn concat_export_segments(
+        app_handle: tauri::AppHandle,
+        project_path: String,
+        target_path: String,
+        segment_files: Vec<String>, // nomes tipo "seg_000000.mp4", em ordem de timeline
+        duration: f64,
+        // Mantido por compatibilidade com o chamador (mp4/mkv); o container final
+        // já é determinado pela extensão de target_path.
+        codec: Option<String>,
+    ) -> Result<(), String> {
+        let _ = codec;
+        let proj = std::path::Path::new(&project_path);
+        let segments_dir = proj.join("export_segments");
+        let list_path = segments_dir.join("concat_list.txt");
+        let video_only_path = proj.join("export_video_only.mp4");
+        let audio_wav_path = proj.join("export_audio_mix.wav");
+
+        if segment_files.is_empty() {
+            return Err("Nenhum segmento pra concatenar.".to_string());
+        }
+
+        // Monta a lista do demuxer concat do ffmpeg. Caminhos são absolutos;
+        // aspas simples são escapadas pro formato que o parser do concat espera.
+        let mut list_content = String::new();
+        for name in &segment_files {
+            let seg_path = segments_dir.join(name);
+            let escaped = seg_path.to_string_lossy().replace('\'', "'\\''");
+            list_content.push_str(&format!("file '{}'\n", escaped));
+        }
+        std::fs::write(&list_path, list_content)
+            .map_err(|e| format!("Erro ao escrever lista de concat: {}", e))?;
+
+        // Passo 1: concatena todos os segmentos com stream copy (mesmo
+        // codec/resolução/fps em todos, então não precisa recodificar).
+        let step1 = app_handle
+            .shell()
+            .command("ffmpeg")
+            .args([
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                &list_path.to_string_lossy(),
+                "-c",
+                "copy",
+                &video_only_path.to_string_lossy(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("FFmpeg (concat) falhou: {}", e))?;
+
+        if !step1.status.success() {
+            return Err(format!(
+                "FFmpeg (concat) erro: {}",
+                String::from_utf8_lossy(&step1.stderr)
+            ));
+        }
+
+        // Passo 2: acopla o áudio já mixado pelo frontend (mesma lógica do
+        // passo 2 de assemble_exported_video).
+        let has_audio = audio_wav_path.exists();
+        let mut final_args: Vec<String> = vec!["-y".into()];
+        final_args.push("-i".into());
+        final_args.push(video_only_path.to_string_lossy().to_string());
+
+        if has_audio {
+            final_args.push("-i".into());
+            final_args.push(audio_wav_path.to_string_lossy().to_string());
+            final_args.push("-c:v".into());
+            final_args.push("copy".into());
+            final_args.push("-c:a".into());
+            final_args.push("aac".into());
+            final_args.push("-b:a".into());
+            final_args.push("192k".into());
+            final_args.push("-t".into());
+            final_args.push(format!("{:.6}", duration));
+        } else {
+            final_args.push("-c".into());
+            final_args.push("copy".into());
+        }
+
+        final_args.push(target_path.clone());
+
+        let step2 = app_handle
+            .shell()
+            .command("ffmpeg")
+            .args(final_args)
+            .output()
+            .await
+            .map_err(|e| format!("FFmpeg (mux final) falhou: {}", e))?;
+
+        if !step2.status.success() {
+            return Err(format!(
+                "FFmpeg (mux final) erro: {}",
+                String::from_utf8_lossy(&step2.stderr)
+            ));
+        }
+
+        // Limpeza
+        let _ = std::fs::remove_dir_all(&segments_dir);
+        let _ = std::fs::remove_file(&video_only_path);
+        let _ = std::fs::remove_file(&audio_wav_path);
+        let _ = std::fs::remove_dir_all(proj.join("export_frames"));
+
+        let _ = app_handle.emit("export-progress", 100u32);
+
+        Ok(())
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
@@ -2581,6 +2849,9 @@ fn main() {
             save_frame_as_asset,
             save_export_audio,
             assemble_exported_video,
+            cut_clip_segment,
+            assemble_frames_segment,
+            concat_export_segments,
             list_projects,
             delete_project,
             import_asset,
