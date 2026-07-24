@@ -3,6 +3,24 @@ import { invoke } from '@tauri-apps/api/core';
 import { drawFrame as professionalDrawFrame, renderAudioOffline } from "./Render/Render";
 import { buildExportPlan, ExportSegment } from "./Render/exportPlanner";
 
+/**
+ * Roda `worker` sobre `items` com no máximo `limit` execuções concorrentes.
+ * Usado pra disparar os cortes "simples" em paralelo em vez de esperar um
+ * ffmpeg terminar pra começar o próximo — são processos independentes, então
+ * serializar era desperdiçar núcleos de CPU ociosos.
+ */
+async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const runners = Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
+}
+
 
 
 export interface RenderEngineContext {
@@ -195,12 +213,21 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
   const drawFrame = await getDrawFrameFunction();
 
   const plan = buildExportPlan(clips, timelineTransitions, W, H, duration);
+  const simpleCount  = plan.filter(s => s.kind === 'simple').length;
+  const complexCount = plan.filter(s => s.kind === 'complex').length;
   console.log(
-    '[Export] plano híbrido:',
+    `[Export] plano híbrido: ${simpleCount} corte(s) direto(s), ${complexCount} trecho(s) renderizado(s):`,
     plan.map(s => s.kind === 'simple'
       ? `corte[${s.clip.name}] ${s.tStart.toFixed(2)}-${s.tEnd.toFixed(2)}`
       : `render ${s.tStart.toFixed(2)}-${s.tEnd.toFixed(2)}`),
   );
+  if (complexCount > 0) {
+    console.warn(
+      `[Export] ATENÇÃO: ${complexCount} trecho(s) caiu(caíram) no render frame-a-frame. ` +
+      `Se você esperava que TUDO fosse corte direto, o classificador (isTrivialClip) ` +
+      `está rejeitando algum clip — veja os motivos possíveis no comentário acima do isTrivialClip.`,
+    );
+  }
 
   const offscreenRenderer = new THREE.WebGLRenderer({
     antialias: false, alpha: false,
@@ -262,95 +289,116 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
   let workUnitsDone = 0;
   const bumpProgress = () => onProgress?.(Math.min(60, Math.floor((workUnitsDone / totalWorkUnits) * 60)));
 
-  const segmentFiles: string[] = [];
+  const segmentFiles: string[] = plan.map((_, idx) => `seg_${String(idx).padStart(6, '0')}.mp4`);
+
+  // Concorrência dos cortes simples: um a menos que o número de núcleos
+  // disponíveis (deixa um núcleo livre pra UI/render), com um teto razoável
+  // pra não estourar limite de processos/handles de arquivo abertos.
+  const cutConcurrency = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
+  console.log(`[Export] ${simpleCount} corte(s) simples, ${complexCount} segmento(s) complexo(s), concorrência=${cutConcurrency}`);
 
   try {
-    // ── Fase B1 (0%→60%): cada segmento do plano híbrido ──────────────────
+    // Dispara TODOS os cortes simples em paralelo (limitado por
+    // cutConcurrency) — são chamadas ffmpeg independentes entre si, e também
+    // independentes do loop de segmentos complexos abaixo (que usa GPU via
+    // Three.js, não CPU/ffmpeg), então os dois rodam ao mesmo tempo.
+    const simpleEntries = plan
+      .map((seg, idx) => ({ seg, idx }))
+      .filter((e): e is { seg: Extract<ExportSegment, { kind: 'simple' }>; idx: number } => e.seg.kind === 'simple');
+
+    const cutsPromise = runWithConcurrency(simpleEntries, cutConcurrency, async ({ seg, idx }) => {
+      const assetStart = (seg.tStart - seg.clip.start) + (seg.clip.beginmoment || 0);
+      const segDuration = seg.tEnd - seg.tStart;
+
+      const cutStartedAt = performance.now();
+      await invoke("cut_clip_segment", {
+        projectPath: currentProjectPath,
+        clipName:    seg.clip.name,
+        assetStart:  Math.max(0, assetStart),
+        duration:    Math.max(0, segDuration),
+        width:  W, height: H, fps,
+        segIndex: idx,
+      });
+      console.log(
+        `[Export] segmento ${idx}: corte de "${seg.clip.name}" ` +
+        `(${segDuration.toFixed(2)}s) levou ${((performance.now() - cutStartedAt) / 1000).toFixed(2)}s`,
+      );
+
+      workUnitsDone += SIMPLE_SEGMENT_WEIGHT_FRAMES;
+      bumpProgress();
+    });
+
+    // ── Fase B1 (0%→60%): segmentos complexos, sequenciais (frame a frame) ─
+    // Rodam em paralelo com cutsPromise acima — não competem por recurso
+    // (um é CPU/ffmpeg, o outro é GPU/Three.js + IPC de PNG).
     for (let segIdx = 0; segIdx < plan.length; segIdx++) {
       const seg = plan[segIdx];
-      const segFileName = `seg_${String(segIdx).padStart(6, '0')}.mp4`;
+      if (seg.kind !== 'complex') continue;
 
-      if (seg.kind === 'simple') {
-        // ── Corte direto do arquivo fonte, sem passar pelo Three.js ──────
-        const assetStart = (seg.tStart - seg.clip.start) + (seg.clip.beginmoment || 0);
-        const segDuration = seg.tEnd - seg.tStart;
+      const segFrameDir = `export_frames/seg_${String(segIdx).padStart(6, '0')}`;
+      const segFrameCount = Math.max(1, Math.round((seg.tEnd - seg.tStart) * fps));
 
-        console.log(
-          `[Export] segmento ${segIdx}: corte direto de "${seg.clip.name}" ` +
-          `(${segDuration.toFixed(2)}s a partir de ${assetStart.toFixed(2)}s no asset)`,
-        );
+      for (let f = 0; f < segFrameCount; f++) {
+        const t = seg.tStart + f / fps;
 
-        await invoke("cut_clip_segment", {
-          projectPath: currentProjectPath,
-          clipName:    seg.clip.name,
-          assetStart:  Math.max(0, assetStart),
-          duration:    Math.max(0, segDuration),
-          width:  W, height: H, fps,
-          segIndex: segIdx,
+        offscreenRenderer.setRenderTarget(renderTarget);
+
+        await drawFrame({
+          time: t, projectConfig, currentProjectPath,
+          sceneRef:    exportSceneRef  as any,
+          rendererRef: { current: offscreenRenderer } as any,
+          cameraRef:   { current: exportCamera }       as any,
+          topClips:    topClipsRef                     as any,
+          groupsRef:   exportGroupsRef                 as any,
+          getInterpolatedValueWithFades, invoke,
+          topAudios:   topAudiosRef                    as any,
+          isPlaying:   false,
+          settingsFolder,
+          timelineTransitions,
+          isExport:    true,
         });
 
-        workUnitsDone += SIMPLE_SEGMENT_WEIGHT_FRAMES;
+        // (Removido) offscreenRenderer.render(exportScene, exportCamera) duplicado:
+        // drawFrame() já termina com rendererRef.current.render(...) internamente
+        // (ver fim de drawFrame em Render.tsx).
+
+        const pixelBuffer = new Uint8Array(W * H * 4);
+        offscreenRenderer.readRenderTargetPixels(renderTarget, 0, 0, W, H, pixelBuffer);
+
+        const flipped = flipVertical(pixelBuffer, W, H);
+        auxCtx.putImageData(new ImageData(new Uint8ClampedArray(flipped), W, H), 0, 0);
+
+        await invoke("save_export_frame", {
+          projectPath: currentProjectPath,
+          frameIndex:  f,
+          pngBase64:   auxCanvas.toDataURL("image/png"),
+          segmentDir:  segFrameDir,
+        });
+
+        workUnitsDone++;
         bumpProgress();
-      } else {
-        // ── Segmento complexo: render frame a frame, como antes ──────────
-        const segFrameDir = `export_frames/seg_${String(segIdx).padStart(6, '0')}`;
-        const segFrameCount = Math.max(1, Math.round((seg.tEnd - seg.tStart) * fps));
-
-        for (let f = 0; f < segFrameCount; f++) {
-          const t = seg.tStart + f / fps;
-
-          offscreenRenderer.setRenderTarget(renderTarget);
-
-          await drawFrame({
-            time: t, projectConfig, currentProjectPath,
-            sceneRef:    exportSceneRef  as any,
-            rendererRef: { current: offscreenRenderer } as any,
-            cameraRef:   { current: exportCamera }       as any,
-            topClips:    topClipsRef                     as any,
-            groupsRef:   exportGroupsRef                 as any,
-            getInterpolatedValueWithFades, invoke,
-            topAudios:   topAudiosRef                    as any,
-            isPlaying:   false,
-            settingsFolder,
-            timelineTransitions,
-            isExport:    true,
-          });
-
-          // (Removido) offscreenRenderer.render(exportScene, exportCamera) duplicado:
-          // drawFrame() já termina com rendererRef.current.render(...) internamente
-          // (ver fim de drawFrame em Render.tsx).
-
-          const pixelBuffer = new Uint8Array(W * H * 4);
-          offscreenRenderer.readRenderTargetPixels(renderTarget, 0, 0, W, H, pixelBuffer);
-
-          const flipped = flipVertical(pixelBuffer, W, H);
-          auxCtx.putImageData(new ImageData(new Uint8ClampedArray(flipped), W, H), 0, 0);
-
-          await invoke("save_export_frame", {
-            projectPath: currentProjectPath,
-            frameIndex:  f,
-            pngBase64:   auxCanvas.toDataURL("image/png"),
-            segmentDir:  segFrameDir,
-          });
-
-          workUnitsDone++;
-          bumpProgress();
-        }
-
-        console.log(`[Export] segmento ${segIdx}: ${segFrameCount} frames renderizados → assemble`);
-
-        await invoke("assemble_frames_segment", {
-          projectPath: currentProjectPath,
-          segIndex: segIdx, fps, width: W, height: H,
-        });
       }
 
-      segmentFiles.push(segFileName);
+      const assembleStartedAt = performance.now();
+      await invoke("assemble_frames_segment", {
+        projectPath: currentProjectPath,
+        segIndex: segIdx, fps, width: W, height: H,
+      });
+      console.log(
+        `[Export] segmento ${segIdx}: ${segFrameCount} frames renderizados, ` +
+        `assemble levou ${((performance.now() - assembleStartedAt) / 1000).toFixed(2)}s`,
+      );
     }
+
+    // Garante que todos os cortes paralelos terminaram antes de seguir pro concat.
+    const cutsStartedWaitAt = performance.now();
+    await cutsPromise;
+    console.log(`[Export] espera final pelos cortes simples: ${((performance.now() - cutsStartedWaitAt) / 1000).toFixed(2)}s`);
 
     onProgress?.(60);
 
     // ── Fase B2 (60%→80%): mix de áudio offline ───────────────────────────
+    const audioStartedAt = performance.now();
     await renderAudioOffline(
       audioClips,
       duration,
@@ -358,10 +406,12 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       getInterpolatedValueWithFades,
       (p) => onProgress?.(60 + Math.floor(p * 0.2)),
     );
+    console.log(`[Export] mix de áudio levou ${((performance.now() - audioStartedAt) / 1000).toFixed(2)}s`);
 
     onProgress?.(80);
 
     // ── Fase B3 (80%→100%): Rust concatena os segmentos + acopla o áudio ──
+    const concatStartedAt = performance.now();
     await invoke("concat_export_segments", {
       projectPath: currentProjectPath,
       targetPath,
@@ -369,6 +419,7 @@ export async function exportVideo(opts: ExportOptions): Promise<void> {
       duration,
       codec: exportCodec, // 'mp4' | 'mkv'
     });
+    console.log(`[Export] concat + mux final levou ${((performance.now() - concatStartedAt) / 1000).toFixed(2)}s`);
 
     onProgress?.(100);
 

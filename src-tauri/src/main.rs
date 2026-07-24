@@ -2600,6 +2600,8 @@ fn main() {
         fps: u32,
         seg_index: u32,
     ) -> Result<String, String> {
+        let started_at = std::time::Instant::now();
+
         let source_path = std::path::Path::new(&project_path)
             .join("videos")
             .join(&clip_name);
@@ -2609,6 +2611,11 @@ fn main() {
 
         let out_path = segments_dir.join(format!("seg_{:06}.mp4", seg_index));
 
+        // Preset mais rápido que o do assemble final: este é um arquivo
+        // INTERMEDIÁRIO (vira parte de um concat + mux depois), não o
+        // entregável — não precisa do mesmo crf/preset "de vitrine".
+        // "veryfast" já reduz bastante o tempo de encode em troca de um
+        // arquivo levemente maior, sem perda perceptível de qualidade no crf 18.
         let output = app_handle
             .shell()
             .command("ffmpeg")
@@ -2630,7 +2637,7 @@ fn main() {
                 "-c:v",
                 "libx264",
                 "-preset",
-                "fast",
+                "veryfast",
                 "-crf",
                 "18",
                 "-pix_fmt",
@@ -2640,6 +2647,12 @@ fn main() {
             .output()
             .await
             .map_err(|e| format!("FFmpeg (corte de segmento) falhou: {}", e))?;
+
+        let elapsed = started_at.elapsed();
+        println!(
+            "[cut_clip_segment] seg {} ({} , {:.2}s de duração) levou {:?}",
+            seg_index, clip_name, duration, elapsed
+        );
 
         if !output.status.success() {
             return Err(format!(
@@ -2665,6 +2678,7 @@ fn main() {
         width: u32,
         height: u32,
     ) -> Result<String, String> {
+        let started_at = std::time::Instant::now();
         let proj = std::path::Path::new(&project_path);
         let frames_dir = proj
             .join("export_frames")
@@ -2690,7 +2704,7 @@ fn main() {
                 "-c:v",
                 "libx264",
                 "-preset",
-                "fast",
+                "veryfast",
                 "-crf",
                 "18",
                 "-pix_fmt",
@@ -2711,6 +2725,11 @@ fn main() {
 
         // Os PNGs deste segmento já foram consumidos — libera espaço em disco.
         let _ = std::fs::remove_dir_all(&frames_dir);
+
+        println!(
+            "[assemble_frames_segment] seg {} levou {:?}",
+            seg_index, started_at.elapsed()
+        );
 
         Ok(out_path.to_string_lossy().to_string())
     }
@@ -2734,6 +2753,7 @@ fn main() {
         // já é determinado pela extensão de target_path.
         codec: Option<String>,
     ) -> Result<(), String> {
+        let started_at = std::time::Instant::now();
         let _ = codec;
         let proj = std::path::Path::new(&project_path);
         let segments_dir = proj.join("export_segments");
