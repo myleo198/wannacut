@@ -2095,8 +2095,8 @@ fn open_font_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn sync_video_effect(settings_folder: String, video_name: String) -> Result<String, String> {
-    let effects_path = std::path::Path::new(&settings_folder).join("effects");
+async fn sync_video_effect(settings_folder: String, video_name: String, folder: String) -> Result<String, String> {
+    let effects_path = std::path::Path::new(&settings_folder).join(&folder);
     let file_path = effects_path.join(&video_name);
 
     // Cria a pasta se não existir
@@ -2109,8 +2109,8 @@ async fn sync_video_effect(settings_folder: String, video_name: String) -> Resul
         return Ok(file_path.to_string_lossy().into_owned());
     }
 
-    // Download do servidor
-    let url = format!("https://wannacut.app/assets/effects/{}", video_name);
+    // Download do servidor (pasta remota espelha a pasta local)
+    let url = format!("https://wannacut.app/assets/{}/{}", folder, video_name);
     let client = reqwest::Client::new();
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
 
