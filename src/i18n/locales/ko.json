@@ -74,6 +74,10 @@
     "deleteKfConfirm": "이 속성의 모든 키프레임을 삭제하시겠습니까?",
     "clearKfTitle": "이 속성의 모든 키프레임 지우기",
     "vocalRemover": "보컬 제거",
+    "vocal": "보컬",
+    "instrumental": "인스투르멘탈 전용",
+    "both": "둘 다",
+
     "mask": "마스크",
     "track": "트랙",
     "id": "Id",
@@ -91,6 +95,11 @@
       "text": "텍스트 트랙"
     }
   },
+  
+  "menuClip": {
+  "AddtoAssetsInsert": "에셋에 추가 및 여기에 삽입",
+  "AddtoAssets": "에셋에 추가"
+},
   "newProject": {
     "title": "새 프로젝트",
     "projectName": "프로젝트 이름",

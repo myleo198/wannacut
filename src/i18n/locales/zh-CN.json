@@ -76,6 +76,9 @@
     "deleteKfConfirm": "您要删除此属性的所有关键帧吗？",
     "clearKfTitle": "清除此属性的所有关键帧",
     "vocalRemover": "人声消除",
+    "vocal": "人声",
+    "instrumental": "仅乐器",
+    "both": "两者",
     "mask": "蒙版",
     "track": "轨道",
     "id": "Id",
@@ -93,6 +96,18 @@
     "text": "文字轨道"
     }
   },
+
+
+
+"menuClip": {
+  "AddtoAssetsInsert": "添加到资产并在此处插入",
+  "AddtoAssets": "添加到资产"
+}
+,
+
+
+
+
   "newProject": {
     "title": "新建项目",
     "projectName": "项目名称",

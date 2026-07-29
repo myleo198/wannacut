@@ -74,6 +74,10 @@
     "deleteKfConfirm": "ဤ property အတွက် Keyframe အားလုံး ဖျက်ပစ်လိုပါသလား?",
     "clearKfTitle": "ဤ property အတွက် Keyframe အားလုံး ရှင်းလင်းရန်",
     "vocalRemover": "အသံဖယ်ရှားကိရိယာ",
+    "vocal": "အဆို",
+    "instrumental": "တီးလုံးသီးသန့်",
+    "both": "နှစ်ခုလုံး",
+
     "mask": "မာစ်ကာ",
     "track": "ထရက်",
     "id": "Id",
@@ -91,6 +95,10 @@
       "text": "စာသား ထရက်"
     }
   },
+"menuClip": {
+  "AddtoAssetsInsert": "အက်ဆက်ထဲသို့ ထည့်သွင်းပြီး ဤနေရာတွင် ထည့်ပါ",
+  "AddtoAssets": "အက်ဆက်ထဲသို့ ထည့်သွင်းပါ"
+},
   "newProject": {
     "title": "စီမံကိန်းသစ်",
     "projectName": "စီမံကိန်း အမည်",

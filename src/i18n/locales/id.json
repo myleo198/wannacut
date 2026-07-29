@@ -74,6 +74,10 @@
     "deleteKfConfirm": "Apakah Anda ingin menghapus semua keyframe untuk properti ini?",
     "clearKfTitle": "Hapus semua keyframe untuk properti ini",
     "vocalRemover": "Penghapus Vokal",
+    "vocal": "Vokal",
+    "instrumental": "Hanya Instrumental",
+    "both": "Keduanya",
+
     "mask": "Masker",
     "track": "Trek",
     "id": "Id",
@@ -91,6 +95,12 @@
       "text": "Trek Teks"
     }
   },
+  
+  "menuClip": {
+  "AddtoAssetsInsert": "Tambahkan ke Aset & Sisipkan di Sini",
+  "AddtoAssets": "Tambahkan ke Aset"
+}
+,
   "newProject": {
     "title": "PROYEK BARU",
     "projectName": "Nama Proyek",

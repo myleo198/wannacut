@@ -76,6 +76,10 @@
     "deleteKfConfirm": "您確定要刪除此屬性的所有關鍵影格嗎？",
     "clearKfTitle": "清除此屬性的所有關鍵影格",
     "vocalRemover": "人聲消除",
+    "vocal": "人聲",
+    "instrumental": " 僅樂器",
+    "both": "兩者",
+
     "mask": "遮罩",
     "track": "軌道",
     "id": "Id",
@@ -93,6 +97,11 @@
       "text": "文字軌道"
     }
   },
+  
+"menuClip": {
+  "AddtoAssetsInsert": "新增至資產並在此處插入",
+  "AddtoAssets": "新增至資產"
+},
   "newProject": {
     "title": "新增專案",
     "projectName": "專案名稱",

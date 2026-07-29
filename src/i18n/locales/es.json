@@ -76,6 +76,10 @@
     "deleteKfConfirm": "¿Deseas eliminar todos los fotogramas clave de esta propiedad?",
     "clearKfTitle": "Borrar todos los fotogramas clave de esta propiedad",
     "vocalRemover": "Eliminador de Voz",
+    "vocal": "Vocal",
+    "instrumental": "Solo instrumental",
+    "both": "Ambos",
+
     "mask": "Máscara",
     "track": "Pista",
     "id": "Id",
@@ -93,6 +97,12 @@
     "text": "Pista de Texto"
     }
   },
+"menuClip": {
+  "AddtoAssetsInsert": "Agregar a activos e insertar aquí",
+  "AddtoAssets": "Agregar a activos"
+}
+
+  ,
   "newProject": {
     "title": "NUEVO PROYECTO",
     "projectName": "Nombre del Proyecto",

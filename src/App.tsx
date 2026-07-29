@@ -3607,6 +3607,48 @@ const handleSplit = () => {
 
   const timeOffsetFromClipStart = playheadTime - targetClip.start;
 
+  // Curva de velocidade do clip ORIGINAL, em tempo relativo ao início do clip
+  // (é o mesmo referencial usado por compositionToMediaTime/getAssetTimeAtTimelineTime).
+  const originalSpeedKfs = (targetClip.keyframes?.speed || [])
+    .map((kf: any) => ({ time: kf.time, value: Number(kf.value) }));
+
+  // Quanto tempo de MÍDIA (arquivo fonte) já foi consumido até o ponto de corte.
+  // Só é igual a timeOffsetFromClipStart quando speed === 1 o tempo todo — com
+  // speed ramp, o tempo de timeline e o tempo de mídia divergem, e usar o valor
+  // linear aqui é o que fazia o 2º subclip começar deslocado (B+x em vez de B).
+  const mediaTimeElapsedAtCut = compositionToMediaTime(timeOffsetFromClipStart, originalSpeedKfs);
+
+  // Re-base TODOS os arrays de keyframes (speed, opacity, zoom, position,
+  // rotation3d, mask.*) pro novo início do subclip 2 — tempo 0 passa a ser o
+  // ponto de corte. Sem isso, os keyframes continuam "datados" em relação ao
+  // início do clip original (A), mas o motor de render mede tempo relativo a
+  // partir do novo `start` (B), desalinhando toda a curva.
+  const rebaseKeyframesForSecondPart = (keyframes: any) => {
+    if (!keyframes) return keyframes;
+    const result: any = {};
+    for (const key of Object.keys(keyframes)) {
+      const arr = keyframes[key];
+      if (!Array.isArray(arr) || arr.length === 0) { result[key] = arr; continue; }
+
+      const shifted = [...arr]
+        .sort((a: any, b: any) => a.time - b.time)
+        .map((kf: any) => ({ ...kf, time: kf.time - timeOffsetFromClipStart }))
+        .filter((kf: any) => kf.time >= 0);
+
+      // Se nenhum keyframe sobrou em time=0 (todos ficaram "no passado" antes
+      // do corte, ou o primeiro remanescente é > 0), insere um keyframe
+      // sintético com o valor exatamente interpolado no ponto de corte, pra
+      // preservar o valor visual instantâneo no início do subclip 2.
+      if (shifted.length === 0 || shifted[0].time > 0) {
+        const valueAtCut = getInterpolatedValueWithFades(playheadTime, targetClip, key as any);
+        shifted.unshift({ time: 0, value: valueAtCut });
+      }
+
+      result[key] = shifted;
+    }
+    return result;
+  };
+
   // Part One: maintains the original beginning moment, but shortens the duration.
   const firstClip: Clip = { 
     ...targetClip, 
@@ -3615,7 +3657,8 @@ const handleSplit = () => {
 // Second part:
 // - The start point on the timeline is the needle position.
 // - The duration is what remained of the original clip.
-// - The new begin moment is the original + the time we "travel" within the clip.
+// - The new begin moment is the original + the MEDIA time we "travel" within
+//   the clip (speed-aware, not a linear assumption).
   new Promise(resolve => setTimeout(resolve, 1));
 
   const secondClip: Clip = { 
@@ -3623,7 +3666,8 @@ const handleSplit = () => {
     id: crypto.randomUUID(), 
     start: playheadTime, 
     duration: targetClip.duration - timeOffsetFromClipStart,
-    beginmoment: targetClip.beginmoment + timeOffsetFromClipStart
+    beginmoment: targetClip.beginmoment + mediaTimeElapsedAtCut,
+    keyframes: rebaseKeyframesForSecondPart(targetClip.keyframes),
   };
 
   setClips(prev => [
@@ -6682,7 +6726,7 @@ return (
                             className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all"
                           >
                             <ArrowDownToLine size={13} />
-                            Add to Assets
+                              {t('menuClip.AddtoAssets')}
                           </button>
 
                           {/* Option 2: Add to Assets and insert clip */}
@@ -6743,7 +6787,7 @@ return (
                                     beginmoment: 0,
                                     dimensions: null,
                                     scale: 1,
-                                    type: 'image',
+                                    type: 'video',
                                     font: null,
                                     font_size: null,
                                     font_shine: null,
@@ -6754,7 +6798,7 @@ return (
                                     activeKeyframeView: null,
                                   } as any;
                                   setClips(prev => [...prev, newClip]);
-                                  return [...prev, { id: newTrackId, type: 'image' as any }];
+                                  return [...prev, { id: newTrackId, type: 'video' as any }];
                                 });
 
                                 showNotify(t('notify.frameAddedTimeline'), 'success');
@@ -6765,7 +6809,7 @@ return (
                             className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 text-zinc-400 hover:text-violet-400 text-[10px] font-black uppercase transition-all"
                           >
                             <DiamondPlus size={13} />
-                            Add to Assets &amp; Insert Here
+                            {t('menuClip.AddtoAssetsInsert')}
                           </button>
                         </div>
                       )}
@@ -7606,9 +7650,9 @@ return (
                                   min-w-[170px] bg-zinc-900 border border-white/10 shadow-2xl rounded-lg py-1.5
                                   transition-all duration-150 transform translate-x-2">
                                   {([
-                                    { label: 'Vocals Only',       mode: 'vocals_only'      as const, icon: <MicOffIcon size={14} /> },
-                                    { label: 'Instrumental Only', mode: 'instrumental_only' as const, icon: <Music size={14} /> },
-                                    { label: 'Both',              mode: 'both'              as const, icon: <Wind size={14} /> },
+                                    { label: t('timeline.vocal'),       mode: 'vocals_only'      as const, icon: <MicOffIcon size={14} /> },
+                                    { label: t('timeline.instrumental'), mode: 'instrumental_only' as const, icon: <Music size={14} /> },
+                                    { label:  t('timeline.both'), mode: 'both'              as const, icon: <Wind size={14} /> },
                                   ] as const).map(opt => (
                                     <button
                                       key={opt.mode}

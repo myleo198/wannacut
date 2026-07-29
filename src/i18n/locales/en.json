@@ -76,6 +76,9 @@
     "deleteKfConfirm": "Do you want to delete all keyframes for this property?",
     "clearKfTitle": "Clear all keyframes for this property",
     "vocalRemover": "Vocal Remover",
+    "vocal": "Vocal",
+    "instrumental": "Instrumental Only",
+    "both": "Both",
     "mask": "Mask",
     "track": "Track",
     "id": "Id",
@@ -92,6 +95,11 @@
     "effects": "Effects Track",
     "text": "Text Track"
     }
+  },
+ "menuClip":
+  {
+    "AddtoAssetsInsert": "Add to Assets & Insert Here",
+    "AddtoAssets": "Add to Assets"
   },
   "newProject": {
     "title": "NEW PROJECT",

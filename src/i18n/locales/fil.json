@@ -74,6 +74,10 @@
     "deleteKfConfirm": "Gusto mo bang burahin ang lahat ng keyframe para sa property na ito?",
     "clearKfTitle": "Burahin ang lahat ng keyframe para sa property na ito",
     "vocalRemover": "Tagaalis ng Boses",
+    "vocal": "Vocal",
+    "instrumental": "Instrumental Lamang",
+    "both": "Pareho",
+
     "mask": "Mask",
     "track": "Track",
     "id": "Id",
@@ -91,6 +95,16 @@
       "text": "Text Track"
     }
   },
+
+
+"menuClip": {
+  "AddtoAssetsInsert": "Idagdag sa Assets at Ipasok Dito",
+  "AddtoAssets": "Idagdag sa Assets"
+}
+
+
+
+  ,
   "newProject": {
     "title": "BAGONG PROYEKTO",
     "projectName": "Pangalan ng Proyekto",

@@ -75,6 +75,10 @@
     "deleteKfConfirm": "Deseja apagar todos os keyframes desta propriedade?",
     "clearKfTitle": "Limpar todos os keyframes desta propriedade",
     "vocalRemover": "Removedor Vocal",
+    "vocal": "Vocal",
+    "instrumental": "Apenas Instrumental",
+    "both": "Ambos",
+
     "mask": "Máscara",
     "track": "Faixa",
     "id": "Id",
@@ -93,6 +97,11 @@
   }
 
   },
+  
+"menuClip": {
+  "AddtoAssetsInsert": "Adicionar aos Recursos e Inserir Aqui",
+  "AddtoAssets": "Adicionar aos Recursos"
+},
   "newProject": {
     "title": "NOVO PROJETO",
     "projectName": "Nome do Projeto",

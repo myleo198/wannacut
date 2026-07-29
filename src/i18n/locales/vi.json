@@ -76,6 +76,9 @@
     "deleteKfConfirm": "Bạn có muốn xóa tất cả keyframe của thuộc tính này không?",
     "clearKfTitle": "Xóa tất cả keyframe của thuộc tính này",
     "vocalRemover": "Loại bỏ Giọng hát",
+    "vocal": "Giọng hát",
+    "instrumental": "Chỉ Nhạc cụ",
+    "both": "Cả hai",
     "mask": "Mặt nạ",
     "track": "Track",
     "id": "Id",
@@ -93,6 +96,11 @@
     "text": "Track Văn bản"
     }
   },
+  
+  "menuClip": {
+  "AddtoAssetsInsert": "Thêm vào Tài sản & Chèn vào đây",
+  "AddtoAssets": "Thêm vào Tài sản"
+},
   "newProject": {
     "title": "DỰ ÁN MỚI",
     "projectName": "Tên Dự án",
