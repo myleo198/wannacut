@@ -1159,7 +1159,7 @@ async fn download_font_file(
 
     // 5. Monta a URL real a partir do nome do arquivo (nunca do frontend)
     let download_url = format!(
-        "https://wannacut.app/fonts/{font_file}"
+        "https://wannacut.app/assets/fonts/{font_file}"
     );
 
     // 6. Baixa e salva
@@ -1521,6 +1521,7 @@ use tauri_plugin_shell::process::CommandEvent;
 async fn get_video_frame(path: String, time_ms: f64) -> Result<String, String> {
     let time_secs = time_ms / 1000.0;
 
+
     // FFmpeg extrai o frame como JPEG para stdout
     let output = Command::new("ffmpeg")
         .args([
@@ -1821,6 +1822,9 @@ fn delete_file(path: String) -> Result<(), String> {
 #[command]
 async fn get_duration(path: String) -> Result<VideoMetadata, String> {
     // Command: ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 path
+    println!("path: {}", path);
+    
+    
     let output = Command::new("ffprobe")
         .args([
             "-v",
@@ -2095,9 +2099,11 @@ fn open_font_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn sync_video_effect(settings_folder: String, video_name: String, folder: String) -> Result<String, String> {
-    let effects_path = std::path::Path::new(&settings_folder).join(&folder);
+async fn sync_video_effect(settings_folder: String, video_name: String) -> Result<String, String> {
+    let effects_path = std::path::Path::new(&settings_folder).join("effects");
     let file_path = effects_path.join(&video_name);
+
+    println!("set folder: {}", settings_folder);
 
     // Cria a pasta se não existir
     if !effects_path.exists() {
@@ -2110,7 +2116,7 @@ async fn sync_video_effect(settings_folder: String, video_name: String, folder: 
     }
 
     // Download do servidor (pasta remota espelha a pasta local)
-    let url = format!("https://wannacut.app/assets/{}/{}", folder, video_name);
+    let url = format!("https://wannacut.app/assets/effects/{}", video_name);
     let client = reqwest::Client::new();
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
 

@@ -29,6 +29,7 @@ import {
   ChevronRight,
   ScanSearch,
 } from 'lucide-react';
+import { label } from 'framer-motion/client';
 
 // ── Freesound types ──────────────────────────────────────────
 interface FreesoundPreviews {
@@ -193,7 +194,13 @@ const VIDEO_EFFECTS = [
   { id: 'film_grain_dust', label: 'Film Grain and Dust' },
   { id: 'blur', label: 'Blur' },
   { id: 'glitch_flash', label: 'Glitch Flash' },
-  { id: 'glitch_rgb', label: 'Glitch RGB' }
+  { id: 'glitch_rgb', label: 'Glitch RGB' },
+  { id: 'vhs_1', label: 'VHS 1' },
+  { id: 'vhs_2', label: 'VHS 2' },
+  { id: 'vhs_3', label: 'VHS 3' },
+  { id: 'vhs_4', label: 'VHS 4' },
+  { id:'vhs_all', label: 'VHS_ALL'}
+
 
 
 ];

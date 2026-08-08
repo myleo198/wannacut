@@ -816,24 +816,31 @@ const [availableFonts, setAvailableFonts] = useState<string[]>([]);
 const loadSystemFonts = async () => {
     const fontsDir = `${localStorage.getItem("wannacut_settings_folder")}/fonts`;
 
+    
 
-    try {
+
+ 
         const fontPaths = await invoke<string[]>('list_fonts', { fontsPath: fontsDir });
         setAvailableFonts(fontPaths);
 
-        
 
-        // Criar @font-face dinamicsoft
-        fontPaths.forEach(path => {
-            const fontName = path.split(/[\\/]/).pop()?.split('.')[0] || "Unknown";
-            const fontUrl = convertFileSrc(path);
-            
-            const fontFace = new FontFace(fontName, `url(${fontUrl})`);
-            fontFace.load().then((loadedFace) => {
-                document.fonts.add(loadedFace);
-            }).catch(e => console.error("Erro ao carregar fonte:", fontName, e));
-        });
-    } catch (e) { console.error(e); }
+fontPaths.forEach(path => {
+    const fontName = path.split(/[\\/]/).pop()?.split('.')[0] || "Unknown";
+    const fontUrl = convertFileSrc(path);
+    console.log('fontName e url', fontName, fontUrl);
+
+    // TESTE: tente carregar via fetch pra ver o erro real
+    fetch(fontUrl)
+        .then(res => console.log('fetch status', fontName, res.status, res.headers.get('content-type')))
+        .catch(err => console.error('fetch falhou', fontName, err));
+
+    const fontFace = new FontFace(fontName, `url("${fontUrl}")`); // note as aspas
+    fontFace.load().then((loadedFace) => {
+        document.fonts.add(loadedFace);
+    }).catch(e => console.error("Erro ao carregar fonte:", fontName, e));
+});
+
+    
 };
 
 

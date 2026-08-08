@@ -979,6 +979,11 @@ const EffectControl = ({ effect, onUpdate }) => {
     case 'glitch_flash':
     case 'film_grain':
     case 'film_grain_dust':
+    case 'vhs_1':
+    case 'vhs_2':
+    case 'vhs_3':
+    case 'vhs_4':  
+    case 'vhs_all':
       return renderSlider(t('properties.effects_.intensity'), 'intensity', 0, 100, 1);
     case 'microphone':
     case 'alien':

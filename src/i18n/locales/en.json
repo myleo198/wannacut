@@ -414,7 +414,13 @@
       "film_grain_dust": "Film Grain and Dust",
       "blur": "Blur",
       "glitch_flash": "Glitch Flash",
-      "glitch_rgb": "Glitch RGB"
+      "glitch_rgb": "Glitch RGB",
+      "vhs_1": "VHS 1",
+      "vhs_2": "VHS 2",
+      "vhs_3": "VHS 3",
+      "vhs_4": "VHS 4",
+      "vhs_all": "VHS ALL"
+
     },
     "audio": {
       "microphone": "Microphone",
