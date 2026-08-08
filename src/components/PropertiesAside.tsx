@@ -965,6 +965,10 @@ const EffectControl = ({ effect, onUpdate }) => {
   );
 
   switch (effect.name) {
+    case 'typewrite':
+    case 'pop_in':
+    case 'glitch_text':
+      return renderSlider(t('properties.effects_.revealDuration'), 'duration', 0.1, 5, 0.1);
     case 'camera_shake':
       return (
         <>
@@ -1036,15 +1040,17 @@ const EffectsSection = ({ clip, setClips, removeEffectFromClip }) => {
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${eff.category === 'audio' ? 'bg-fuchsia-500/20' : 'bg-purple-500/20'}`}>
-                    <Sparkles size={14} className={eff.category === 'audio' ? 'text-fuchsia-400' : 'text-purple-400'} />
+                  <div className={`p-2 rounded-lg ${eff.category === 'audio' ? 'bg-fuchsia-500/20' : eff.category === 'text' ? 'bg-cyan-500/20' : 'bg-purple-500/20'}`}>
+                    {eff.category === 'text'
+                      ? <Type size={14} className="text-cyan-400" />
+                      : <Sparkles size={14} className={eff.category === 'audio' ? 'text-fuchsia-400' : 'text-purple-400'} />}
                   </div>
                   <div>
                     <h4 className="text-[11px] font-black text-white  tracking-tighter">
                       {t(`effects.${eff.category.toLowerCase()}.${eff.name.toLowerCase()}`)}
                     </h4>
                     <span className="text-[8px] text-zinc-500 uppercase font-bold tracking-widest">
-                      {eff.category === 'audio' ? t('properties.effects_.audio') : t('properties.effects_.video')}
+                      {eff.category === 'audio' ? t('properties.effects_.audio') : eff.category === 'text' ? t('properties.effects_.text') : t('properties.effects_.video')}
                     </span>
                   </div>
                 </div>
@@ -1218,12 +1224,16 @@ export const PropertiesAside = ({
   if (!_valid || !foundClip) return null;
   if (!selectedClip!.path && selectedClip!.type !== 'text') return null;
 
+  // Texto não tem transições (cortes de trilha), mas agora tem seus próprios
+  // efeitos de revelação (typewrite / pop-in / glitch), então ganha a aba
+  // "effects" também.
   const tabs = !isText ? [
     { id: 'basic',       label: t('properties.basic') },
     { id: 'effects',     label: t('properties.effects') },
     { id: 'transitions', label: t('properties.transitions') },
   ] : [
-    { id: 'basic', label: t('properties.basic') }
+    { id: 'basic',   label: t('properties.basic') },
+    { id: 'effects', label: t('properties.effects') },
   ];
 
   return (

@@ -145,7 +145,7 @@ interface ItensAsideProps {
   setInPoint: (val: number) => void;
   setOutPoint: (val: number) => void;
   setCurrentTime2: (val: number) => void;
-  handleDragStartEffect: (e: React.DragEvent, effectId: string, category: 'video' | 'audio') => void;
+  handleDragStartEffect: (e: React.DragEvent, effectId: string, category: 'video' | 'audio' | 'text') => void;
   handleDragStartTransition: (e: React.DragEvent, transitionId: string) => void;
   handleDragStart: (e: any, ...args: any[]) => void;
   handleRenameAsset: (oldName: string, newName: string) => void;
@@ -209,6 +209,15 @@ const AUDIO_EFFECTS = [
   { id: 'microphone', label: 'Microfone' },
   { id: 'alien', label: 'Alien' },
   { id: 'pitch', label: 'Pitch' },
+];
+
+// Efeitos de revelação de texto: controlam COMO o texto aparece na tela no
+// início do clip. Todos compartilham o mesmo parâmetro de configuração
+// (duração até o texto ficar "normal"), definido no PropertiesAside.
+const TEXT_EFFECTS = [
+  { id: 'typewrite', label: 'Typewrite' },
+  { id: 'pop_in', label: 'Pop-in / Bounce' },
+  { id: 'glitch_text', label: 'Glitch' },
 ];
 
 const TRANSITIONS_LIST = [
@@ -2046,6 +2055,29 @@ export const ItensAside = ({
                   ))}
                 </div>
               </div> 
+            )}
+
+              {/* Text Effects */}
+              { typeofclip == 'text' && ( <div>
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-500 mb-4">
+                  {t('sidebar.textEffects')}
+                </h3>
+                <div className="grid grid-cols-1 gap-2">
+                  {TEXT_EFFECTS.map((eff) => (
+                    <motion.div
+                      key={eff.id}
+                      draggable
+                      onDragStart={(e) => handleDragStartEffect(e, eff.id, 'text')}
+                      className="group relative bg-cyan-600/5 border border-cyan-500/10 p-3 rounded-lg hover:border-cyan-500/40 hover:bg-cyan-600/10 cursor-grab active:cursor-grabbing transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Type size={16} className="text-cyan-400" />
+                        <p className="text-xs text-zinc-200 font-medium">{t(`effects.text.${eff.id}`)}</p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
             )}
             </div>
           )}

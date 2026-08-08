@@ -3817,30 +3817,63 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
         try {
           const data = JSON.parse(effectDataRaw);
           const currentEffects = updatedClip.effects || [];
+          const clipType = knowTypeByAssetName(clip.name);
 
-
-          if(knowTypeByAssetName(clip.name) == 'image' && data.category == 'audio')
+          if(clipType == 'image' && data.category == 'audio')
           {
             showNotify(t('notify.effectNotAvailable'),'error')
             return clip;
           }
           
-          if(knowTypeByAssetName(clip.name) == 'audio' && data.category == 'video')
+          if(clipType == 'audio' && data.category == 'video')
           {
             showNotify(t('notify.effectNotAvailable'),'error')
             return clip;
           }
 
-          // Evita adicionar exatamente o mesmo objeto no mesmo milissegundo
-          updatedClip.effects = [
-            ...currentEffects,
-            { 
-              id: crypto.randomUUID(),
-              name: data.effectId, 
-              category: data.category,
-              instanceId: crypto.randomUUID() // Use um ID único para cada instância
-            }
-          ];
+          // Efeitos de texto (typewrite/pop-in/glitch) só fazem sentido em
+          // clips de texto, e vice-versa: efeitos de vídeo/áudio não se
+          // aplicam a um clip de texto (não há decodificação de frame nem
+          // trilha de áudio pra afetar).
+          if(data.category == 'text' && clipType != 'text')
+          {
+            showNotify(t('notify.effectNotAvailable'),'error')
+            return clip;
+          }
+
+          if(clipType == 'text' && data.category != 'text')
+          {
+            showNotify(t('notify.effectNotAvailable'),'error')
+            return clip;
+          }
+
+          if (data.category === 'text') {
+            // Os três efeitos de texto (typewrite, pop-in, glitch) descrevem
+            // comportamentos alternativos pra MESMA janela de "revelação" do
+            // texto no início do clip — não faz sentido dois ativos ao mesmo
+            // tempo. Trocamos o efeito de texto existente em vez de empilhar.
+            updatedClip.effects = [
+              ...currentEffects.filter((ef: any) => ef.category !== 'text'),
+              {
+                id: crypto.randomUUID(),
+                name: data.effectId,
+                category: 'text',
+                duration: 1, // segundos até o texto ficar 100% "normal" na tela
+                instanceId: crypto.randomUUID()
+              }
+            ];
+          } else {
+            // Evita adicionar exatamente o mesmo objeto no mesmo milissegundo
+            updatedClip.effects = [
+              ...currentEffects,
+              { 
+                id: crypto.randomUUID(),
+                name: data.effectId, 
+                category: data.category,
+                instanceId: crypto.randomUUID() // Use um ID único para cada instância
+              }
+            ];
+          }
         } catch (err) {
           console.error("Erro ao processar drop de efeito:", err);
         }
@@ -3876,7 +3909,7 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
 const handleDragStartEffect = (
   e: React.DragEvent, 
   effectId: string, 
-  category: 'video' | 'audio'
+  category: 'video' | 'audio' | 'text'
 ) => {
   const effectData = {
     type: 'effect',
