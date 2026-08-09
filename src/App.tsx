@@ -3848,17 +3848,24 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
           }
 
           if (data.category === 'text') {
-            // Os três efeitos de texto (typewrite, pop-in, glitch) descrevem
-            // comportamentos alternativos pra MESMA janela de "revelação" do
-            // texto no início do clip — não faz sentido dois ativos ao mesmo
-            // tempo. Trocamos o efeito de texto existente em vez de empilhar.
+            // Os efeitos de texto agora podem ser combinados livremente
+            // (ex.: typewrite + glitch ao mesmo tempo) — cada um mexe numa
+            // parte diferente do desenho (ver Render.tsx), então empilhar
+            // é seguro. Só evitamos duplicar a MESMA instância de efeito
+            // (ex.: dois "pop_in" ao mesmo tempo não faria sentido).
+            const alreadyHasSameEffect = currentEffects.some((ef: any) => ef.category === 'text' && ef.name === data.effectId);
+            if (alreadyHasSameEffect) {
+              showNotify(t('notify.effectAlreadyApplied'), 'error');
+              return clip;
+            }
+
             updatedClip.effects = [
-              ...currentEffects.filter((ef: any) => ef.category !== 'text'),
+              ...currentEffects,
               {
                 id: crypto.randomUUID(),
                 name: data.effectId,
                 category: 'text',
-                duration: 1, // segundos até o texto ficar 100% "normal" na tela
+                duration: 1, // segundos até esse efeito ficar 100% "resolvido"
                 instanceId: crypto.randomUUID()
               }
             ];

@@ -161,6 +161,7 @@
     "noClipUnderPlayhead": "No clip under the playhead",
     "clipSplit": "Clip split!",
     "effectNotAvailable": "Effect not available for this type of clip",
+    "effectAlreadyApplied": "This effect is already applied to this clip",
     "invalidFileType": "Invalid file type: Only video, audio, text, effects and images are allowed",
     "invalidFileTypeMedia": "Invalid file type: Only video, audio, and images are allowed",
     "assetsImported": "Assets imported",
@@ -250,7 +251,9 @@
       "pitch": "Pitch (Semitones)",
       "noParams": "No configurable parameters for this effect.",
       "video": "Video",
-      "audio": "Audio"
+      "audio": "Audio",
+      "text": "Text",
+      "revealDuration": "Reveal Duration (s)"
     }
   },
   "aside": {
@@ -372,6 +375,7 @@
     "noFonts": "No fonts found. Download and put in subfolder fonts in freecut_settings (check the configurations)",
     "videoEffects": "Video Effects",
     "audioEffects": "Audio Effects",
+    "textEffects": "Text Effects",
     "transitionsLibrary": "Transitions Library",
     "tabs": {
       "Media": "Media",
@@ -426,6 +430,11 @@
       "microphone": "Microphone",
       "alien": "Alien",
       "pitch": "Pitch"
+    },
+    "text": {
+      "typewrite": "Typewrite",
+      "pop_in": "Pop-in / Bounce",
+      "glitch_text": "Glitch"
     }
   },
   "transitions": {
