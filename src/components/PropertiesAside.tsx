@@ -584,6 +584,184 @@ const BasicSection = ({ clip, isVideo, isText, isAudio, isImage, activeHex, posX
             </section>
           )}
 
+          {/* STROKE & SHADOW */}
+          {isText && (
+            <section className="mb-6 p-3 bg-white/5 rounded-lg border border-white/5">
+              <div className="flex items-center gap-2 mb-4 text-amber-500">
+                <Layers size={12} />
+                <span className="text-[9px] font-bold uppercase tracking-widest">{t('properties.strokeShadow')}</span>
+              </div>
+
+              {/* Stroke */}
+              <PropertyRow
+                label={
+                  <div className="flex justify-between items-center w-full pr-2">
+                    <span>{t('properties.strokeWidth')}</span>
+                    <div className="flex items-center bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                      <input
+                        type="number"
+                        className="w-10 bg-transparent text-[9px] font-mono text-white outline-none"
+                        value={Math.round(selectedClip.font_stroke?.width ?? 0)}
+                        onChange={(e) => {
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          setClips(prev => prev.map(c =>
+                            c.id === selectedClip.id ? { ...c, font_stroke: { ...(c.font_stroke || {}), width: v } } : c
+                          ));
+                        }}
+                      />
+                      <span className="text-[8px] ml-0.5 text-zinc-500">px</span>
+                    </div>
+                  </div>
+                }
+                keyframable={false}
+              >
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  step="1"
+                  className="w-full accent-amber-500 cursor-pointer"
+                  value={selectedClip.font_stroke?.width ?? 0}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setClips(prev => prev.map(c =>
+                      c.id === selectedClip.id ? { ...c, font_stroke: { ...(c.font_stroke || {}), width: v } } : c
+                    ));
+                  }}
+                />
+              </PropertyRow>
+
+              <PropertyRow label={t('properties.strokeColor')} keyframable={false}>
+                <div className="flex items-center gap-2">
+                  <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer">
+                    <div className="w-full h-full" style={{ backgroundColor: selectedClip.font_stroke?.color || '#000000' }} />
+                    <input
+                      type="color"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      value={selectedClip.font_stroke?.color || '#000000'}
+                      onChange={(e) => setClips(prev => prev.map(c =>
+                        c.id === selectedClip.id ? { ...c, font_stroke: { ...(c.font_stroke || {}), color: e.target.value } } : c
+                      ))}
+                    />
+                  </div>
+                  <input
+                    list="color-options"
+                    type="text"
+                    className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
+                    value={selectedClip.font_stroke?.color || '#000000'}
+                    onChange={(e) => setClips(prev => prev.map(c =>
+                      c.id === selectedClip.id ? { ...c, font_stroke: { ...(c.font_stroke || {}), color: e.target.value } } : c
+                    ))}
+                  />
+                </div>
+              </PropertyRow>
+
+              {/* Shadow */}
+              <div className="mt-4 border-t border-white/5 pt-4">
+                <PropertyRow
+                  label={
+                    <div className="flex justify-between items-center w-full pr-2">
+                      <span>{t('properties.shadowIntensity')}</span>
+                      <div className="flex items-center bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                        <input
+                          type="number"
+                          step="0.05"
+                          className="w-10 bg-transparent text-[9px] font-mono text-white outline-none"
+                          value={(selectedClip.font_shine?.intensity ?? 0).toFixed(2)}
+                          onChange={(e) => {
+                            const v = Math.max(0, Math.min(1, Number(e.target.value) || 0));
+                            setClips(prev => prev.map(c =>
+                              c.id === selectedClip.id ? { ...c, font_shine: { ...(c.font_shine || {}), intensity: v } } : c
+                            ));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  }
+                  keyframable={false}
+                >
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    className="w-full accent-amber-500 cursor-pointer"
+                    value={selectedClip.font_shine?.intensity ?? 0}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setClips(prev => prev.map(c =>
+                        c.id === selectedClip.id ? { ...c, font_shine: { ...(c.font_shine || {}), intensity: v } } : c
+                      ));
+                    }}
+                  />
+                </PropertyRow>
+
+                <PropertyRow
+                  label={
+                    <div className="flex justify-between items-center w-full pr-2">
+                      <span>{t('properties.shadowSize')}</span>
+                      <div className="flex items-center bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                        <input
+                          type="number"
+                          className="w-10 bg-transparent text-[9px] font-mono text-white outline-none"
+                          value={Math.round(selectedClip.font_shine?.size ?? 0)}
+                          onChange={(e) => {
+                            const v = Math.max(0, Number(e.target.value) || 0);
+                            setClips(prev => prev.map(c =>
+                              c.id === selectedClip.id ? { ...c, font_shine: { ...(c.font_shine || {}), size: v } } : c
+                            ));
+                          }}
+                        />
+                        <span className="text-[8px] ml-0.5 text-zinc-500">px</span>
+                      </div>
+                    </div>
+                  }
+                  keyframable={false}
+                >
+                  <input
+                    type="range"
+                    min="0"
+                    max="60"
+                    step="1"
+                    className="w-full accent-amber-500 cursor-pointer"
+                    value={selectedClip.font_shine?.size ?? 0}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setClips(prev => prev.map(c =>
+                        c.id === selectedClip.id ? { ...c, font_shine: { ...(c.font_shine || {}), size: v } } : c
+                      ));
+                    }}
+                  />
+                </PropertyRow>
+
+                <PropertyRow label={t('properties.shadowColor')} keyframable={false}>
+                  <div className="flex items-center gap-2">
+                    <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer">
+                      <div className="w-full h-full" style={{ backgroundColor: selectedClip.font_shine?.color || '#ffffff' }} />
+                      <input
+                        type="color"
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        value={selectedClip.font_shine?.color || '#ffffff'}
+                        onChange={(e) => setClips(prev => prev.map(c =>
+                          c.id === selectedClip.id ? { ...c, font_shine: { ...(c.font_shine || {}), color: e.target.value } } : c
+                        ))}
+                      />
+                    </div>
+                    <input
+                      list="color-options"
+                      type="text"
+                      className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
+                      value={selectedClip.font_shine?.color || '#ffffff'}
+                      onChange={(e) => setClips(prev => prev.map(c =>
+                        c.id === selectedClip.id ? { ...c, font_shine: { ...(c.font_shine || {}), color: e.target.value } } : c
+                      ))}
+                    />
+                  </div>
+                </PropertyRow>
+              </div>
+            </section>
+          )}
+
           {/* VOLUME */}
           {(!isImage && !isText) && (
             <PropertyRow 

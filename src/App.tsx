@@ -144,6 +144,12 @@ interface Font_Shine
   color?: string | null; //hexadecimal #ffffff
 }
 
+interface Font_Stroke
+{
+  width?: number; // 0 = sem contorno
+  color?: string | null; //hexadecimal #000000
+}
+
 export interface Clip {
   id: string;
   name: string;
@@ -180,6 +186,7 @@ export interface Clip {
   font_bgcolor?: string | null;
   bg_dimetions?: Position |null; //for text background
   font_shine?: Font_Shine | null;
+  font_stroke?: Font_Stroke | null;
   text_align?: 'left' | 'center' | 'right' | null;
 
   // Mask properties (static defaults; individual props overridden per-frame by mask.* keyframes)
@@ -4341,6 +4348,7 @@ const createClipOnNewTrack =  async (assetName: string, dropTime: number, beginm
             font: type === 'text' ? (dragData?.font || "SofiaRoughBlackInline") : null,
             font_size: type === 'text' ? 14 : null,
             font_shine: type === 'text' ? { size: 0, intensity: 0, color: null } : null,
+            font_stroke: type === 'text' ? { width: 0, color: '#000000' } : null,
             font_color: '#ffffff' 
           };
 
@@ -5420,6 +5428,7 @@ const handleDropOnTimeline = (e: React.DragEvent, trackId: number) => {
         font: whatType === 'text' ? (dragData?.font || "SofiaRoughBlackInline") : null,
         font_size: whatType === 'text' ? 14 : null,
         font_shine: whatType === 'text' ? { size: 0, intensity: 0, color: null } : null,
+        font_stroke: whatType === 'text' ? { width: 0, color: '#000000' } : null,
         font_color: '#ffffff'
       };
 
@@ -6838,6 +6847,7 @@ return (
                                     font: null,
                                     font_size: null,
                                     font_shine: null,
+                                    font_stroke: null,
                                     font_color: '#ffffff',
                                     mute: false,
                                     opacity: 1,
