@@ -1142,11 +1142,48 @@ const EffectControl = ({ effect, onUpdate }) => {
     </div>
   );
 
+  const renderColor = (label: string, attr: string, fallback: string) => (
+    <div className="mt-3 space-y-1.5">
+      <label className="text-[9px] text-zinc-500 uppercase font-black tracking-widest px-1 block">{label}</label>
+      <div className="flex items-center gap-2">
+        <div className="relative w-6 h-6 rounded border border-white/10 overflow-hidden cursor-pointer">
+          <div className="w-full h-full" style={{ backgroundColor: effect[attr] || fallback }} />
+          <input
+            type="color"
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            value={effect[attr] || fallback}
+            onChange={(e) => onUpdate({ [attr]: e.target.value })}
+          />
+        </div>
+        <input
+          type="text"
+          className="flex-1 bg-[#090909] border border-white/10 rounded px-2 py-1 text-[10px] text-white outline-none font-mono"
+          value={effect[attr] || fallback}
+          onChange={(e) => onUpdate({ [attr]: e.target.value })}
+        />
+      </div>
+    </div>
+  );
+
   switch (effect.name) {
     case 'typewrite':
     case 'pop_in':
     case 'glitch_text':
       return renderSlider(t('properties.effects_.revealDuration'), 'duration', 0.1, 5, 0.1);
+    case 'neon':
+    case 'glow':
+      // PRO/Ultimate. A validação de acesso não acontece aqui — esse card só
+      // deveria existir em clip.effects se o drop já passou pelo gate do
+      // Rust (App.tsx → hasPlanAccess), e o desenho de verdade é
+      // regatado de novo no render (Render.tsx), então ajustar esses
+      // sliders não desbloqueia nada por si só.
+      return (
+        <>
+          {renderSlider(t('properties.effects_.glowSize'), 'size', 0, 40, 1)}
+          {renderSlider(t('properties.effects_.glowIntensity'), 'intensity', 0, 1, 0.05)}
+          {renderColor(t('properties.effects_.glowColor'), 'color', effect.name === 'neon' ? '#ff2bd6' : '#ffffff')}
+        </>
+      );
     case 'camera_shake':
       return (
         <>

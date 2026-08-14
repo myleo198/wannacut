@@ -162,6 +162,7 @@
     "clipSplit": "Clip split!",
     "effectNotAvailable": "Effect not available for this type of clip",
     "effectAlreadyApplied": "This effect is already applied to this clip",
+    "proFeatureLocked": "This is a PRO feature — upgrade your plan to unlock it",
     "invalidFileType": "Invalid file type: Only video, audio, text, effects and images are allowed",
     "invalidFileTypeMedia": "Invalid file type: Only video, audio, and images are allowed",
     "assetsImported": "Assets imported",
@@ -259,7 +260,10 @@
       "video": "Video",
       "audio": "Audio",
       "text": "Text",
-      "revealDuration": "Reveal Duration (s)"
+      "revealDuration": "Reveal Duration (s)",
+      "glowSize": "Glow Size",
+      "glowIntensity": "Glow Intensity",
+      "glowColor": "Glow Color"
     }
   },
   "aside": {
@@ -382,6 +386,7 @@
     "videoEffects": "Video Effects",
     "audioEffects": "Audio Effects",
     "textEffects": "Text Effects",
+    "proBadge": "PRO",
     "transitionsLibrary": "Transitions Library",
     "tabs": {
       "Media": "Media",
@@ -440,7 +445,9 @@
     "text": {
       "typewrite": "Typewrite",
       "pop_in": "Pop-in / Bounce",
-      "glitch_text": "Glitch"
+      "glitch_text": "Glitch",
+      "neon": "Neon",
+      "glow": "Glow"
     }
   },
   "transitions": {

@@ -2934,6 +2934,7 @@ fn main() {
             plans::activate_license,
             plans::get_license_state,
             plans::deactivate_license,
+            plans::has_pro_access,
             vocal_remover::vocal_remover_ready,
             vocal_remover::vocal_remover_download,
             vocal_remover::remove_vocals,

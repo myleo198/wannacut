@@ -317,6 +317,76 @@ export const reverterSpeed = (realSpeed: number): number => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// GATE DE FEATURES PAGAS (Neon / Glow, e futuras features PRO/Ultimate)
+//
+// IMPORTANTE: o state React `plan` (useState mais abaixo) é só pra EXIBIÇÃO
+// ("💎 Pro" no header, texto do modal, etc). Ele é lido do backend uma
+// única vez no boot e fica boiando em memória — qualquer pessoa com o
+// React DevTools aberto consegue editar esse hook e virar "pro" na hora,
+// sem nenhuma licença real. Então NENHUMA feature paga de verdade pode
+// checar `plan === 'pro'`.
+//
+// Em vez disso, features pagas chamam `hasPlanAccess(folder, 'pro' | 'ultimate')`,
+// que sempre pergunta de novo pro Rust via `get_license_state` (plans.rs).
+// Esse comando reconstrói o LicenseState do zero a partir do arquivo
+// assinado em disco (validate_offline → verifica assinatura Ed25519 +
+// HWID + validade a cada chamada) — é o MESMO comando que já existe pra
+// mostrar o plano no header/modal, só que aqui a gente nunca guarda o
+// resultado em state de longa duração. Não existe "flag" que o JS
+// controle: o único jeito de virar `true` é ter, na máquina atual, um
+// token válido assinado pela chave privada do servidor.
+//
+// O cache aqui é curtíssimo (poucos segundos) e serve só pra não martelar
+// IPC a cada clique/frame — nunca vira um cache "pra sessão inteira" como
+// o `plan` acima, justamente pra pegar downgrade/expiração de licença sem
+// precisar reiniciar o app.
+// ─────────────────────────────────────────────────────────────────────────
+export type PlanTier = 'free' | 'pro' | 'ultimate';
+const PLAN_RANK: Record<PlanTier, number> = { free: 0, pro: 1, ultimate: 2 };
+
+let _licenseStateCache: { plan: PlanTier; checkedAt: number } | null = null;
+const LICENSE_CACHE_TTL_MS = 15_000;
+
+/** Sempre revalida no Rust (com um cache curtíssimo). Nunca confie em `plan` (state React) aqui. */
+const getVerifiedPlan = async (folder: string | null, force = false): Promise<PlanTier> => {
+  if (!folder) return 'free';
+  const now = Date.now();
+  if (!force && _licenseStateCache && now - _licenseStateCache.checkedAt < LICENSE_CACHE_TTL_MS) {
+    return _licenseStateCache.plan;
+  }
+  try {
+    const state = await invoke<{ plan: PlanTier }>('get_license_state', { settingsFolder: folder });
+    const plan = state?.plan ?? 'free';
+    _licenseStateCache = { plan, checkedAt: now };
+    return plan;
+  } catch (err) {
+    // Qualquer erro (IPC, arquivo ausente, etc.) nunca libera por padrão.
+    console.error('Erro ao verificar plano da licença:', err);
+    _licenseStateCache = { plan: 'free', checkedAt: now };
+    return 'free';
+  }
+};
+
+/**
+ * `minTier: 'pro'` → libera pra quem tem plano Pro OU Ultimate.
+ * `minTier: 'ultimate'` → libera SOMENTE pra quem tem plano Ultimate.
+ */
+export const hasPlanAccess = async (
+  folder: string | null,
+  minTier: 'pro' | 'ultimate',
+  force = false
+): Promise<boolean> => {
+  const plan = await getVerifiedPlan(folder, force);
+  return PLAN_RANK[plan] >= PLAN_RANK[minTier];
+};
+
+/** Nível mínimo de plano exigido por cada efeito de texto pago. Hoje ambos são 'pro' (Pro ou Ultimate liberam); dá pra promover algum pra 'ultimate' aqui no futuro sem mexer em mais nada. */
+export const TEXT_EFFECT_MIN_PLAN: Record<string, 'pro' | 'ultimate'> = {
+  neon: 'pro',
+  glow: 'pro',
+};
+
 // ─── Speed Ramp: Time Remapping Utilities ────────────────────────────────────
 //
 // All speed keyframes store `value` in real speed (e.g. 1.0, 2.0, 0.5).
@@ -3797,7 +3867,7 @@ const lockmuteTrack = (option: number, track: Tracks) => {
   }, [isSetupOpen, currentProjectPath]);
 
 
-const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
+const handleDropOnClip = async (e: React.DragEvent, targetClipId: string) => {
   e.preventDefault();
   
   // 1. Pegamos os dados e limpamos IMEDIATAMENTE para evitar leituras duplas
@@ -3809,6 +3879,35 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
 
   // Limpa o dataTransfer para este evento
   e.dataTransfer.clearData();
+
+  // ── GATE DE PLANO (Neon / Glow) ─────────────────────────────────────────
+  // Isso roda ANTES de qualquer setClips e usa uma checagem FRESCA
+  // (force=true, ignora o cache de 15s) direto no Rust via `hasPlanAccess`
+  // → comando `get_license_state` → `validate_offline`. De propósito NÃO
+  // usamos o state `plan` aqui: ele é só decorativo e qualquer um com o
+  // DevTools aberto consegue setá-lo pra "pro" na mão. Se a pessoa não tem
+  // o plano mínimo exigido (assinatura Ed25519 verificada no arquivo
+  // local), o efeito nunca chega a entrar no clip — não existe "editar o
+  // state depois" pra contornar isso.
+  if (effectDataRaw) {
+    try {
+      const parsedEffect = JSON.parse(effectDataRaw);
+      const minPlan = parsedEffect?.category === 'text' ? TEXT_EFFECT_MIN_PLAN[parsedEffect.effectId] : undefined;
+      if (minPlan) {
+        const allowed = await hasPlanAccess(settingsFolder, minPlan, true);
+        if (!allowed) {
+          showNotify(t('notify.proFeatureLocked'), 'error');
+          setSelectedUpgrade(minPlan);
+          setIsPlanModalOpen(true);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao processar drop de efeito (gate de plano):', err);
+      return;
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────
 
   setClips(prevClips => {
     return prevClips.map(clip => {
@@ -3866,15 +3965,32 @@ const handleDropOnClip = (e: React.DragEvent, targetClipId: string) => {
               return clip;
             }
 
+            const isReveal = !TEXT_EFFECT_MIN_PLAN[data.effectId];
+
             updatedClip.effects = [
               ...currentEffects,
-              {
-                id: crypto.randomUUID(),
-                name: data.effectId,
-                category: 'text',
-                duration: 1, // segundos até esse efeito ficar 100% "resolvido"
-                instanceId: crypto.randomUUID()
-              }
+              isReveal
+                ? {
+                    // typewrite / pop_in / glitch_text: efeitos de REVELAÇÃO,
+                    // com janela de tempo (duration) a partir do início do clip.
+                    id: crypto.randomUUID(),
+                    name: data.effectId,
+                    category: 'text',
+                    duration: 1, // segundos até esse efeito ficar 100% "resolvido"
+                    instanceId: crypto.randomUUID()
+                  }
+                : {
+                    // neon / glow (PRO): efeitos de ESTILO persistentes pro
+                    // clip inteiro, sem janela de revelação — mesmo esquema
+                    // de campos do font_shine (size/intensity/color).
+                    id: crypto.randomUUID(),
+                    name: data.effectId,
+                    category: 'text',
+                    size: 12,
+                    intensity: 0.8,
+                    color: data.effectId === 'neon' ? '#ff2bd6' : '#ffffff',
+                    instanceId: crypto.randomUUID()
+                  }
             ];
           } else {
             // Evita adicionar exatamente o mesmo objeto no mesmo milissegundo

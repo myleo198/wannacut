@@ -218,6 +218,12 @@ const TEXT_EFFECTS = [
   { id: 'typewrite', label: 'Typewrite' },
   { id: 'pop_in', label: 'Pop-in / Bounce' },
   { id: 'glitch_text', label: 'Glitch' },
+  // Neon/Glow são exclusivos PRO/Ultimate. O `pro: true` aqui só controla
+  // o cadeado/badge visual — a validação de verdade acontece no drop
+  // (App.tsx → hasPlanAccess) e de novo no render (Render.tsx), então
+  // mesmo que alguém force esse flag no DevTools não desbloqueia nada.
+  { id: 'neon', label: 'Neon', pro: true },
+  { id: 'glow', label: 'Glow', pro: true },
 ];
 
 const TRANSITIONS_LIST = [
@@ -2063,19 +2069,34 @@ export const ItensAside = ({
                   {t('sidebar.textEffects')}
                 </h3>
                 <div className="grid grid-cols-1 gap-2">
-                  {TEXT_EFFECTS.map((eff) => (
-                    <motion.div
-                      key={eff.id}
-                      draggable
-                      onDragStart={(e) => handleDragStartEffect(e, eff.id, 'text')}
-                      className="group relative bg-cyan-600/5 border border-cyan-500/10 p-3 rounded-lg hover:border-cyan-500/40 hover:bg-cyan-600/10 cursor-grab active:cursor-grabbing transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Type size={16} className="text-cyan-400" />
-                        <p className="text-xs text-zinc-200 font-medium">{t(`effects.text.${eff.id}`)}</p>
-                      </div>
-                    </motion.div>
-                  ))}
+                  {TEXT_EFFECTS.map((eff) => {
+                    const isLocked = eff.pro && license?.plan !== 'pro' && license?.plan !== 'ultimate';
+                    return (
+                      <motion.div
+                        key={eff.id}
+                        draggable
+                        onDragStart={(e) => handleDragStartEffect(e, eff.id, 'text')}
+                        className={`group relative border p-3 rounded-lg cursor-grab active:cursor-grabbing transition-all ${
+                          isLocked
+                            ? 'bg-zinc-900/40 border-white/5 hover:border-amber-500/30'
+                            : 'bg-cyan-600/5 border-cyan-500/10 hover:border-cyan-500/40 hover:bg-cyan-600/10'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Type size={16} className={isLocked ? 'text-zinc-600' : 'text-cyan-400'} />
+                          <p className={`text-xs font-medium flex-1 ${isLocked ? 'text-zinc-500' : 'text-zinc-200'}`}>
+                            {t(`effects.text.${eff.id}`)}
+                          </p>
+                          {eff.pro && (
+                            <span className="flex items-center gap-0.5 text-[8px] font-black uppercase tracking-wider text-amber-400">
+                              <DiamondPlus size={9} className="fill-amber-400/20" />
+                              {t('sidebar.proBadge')}
+                            </span>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </div>
               </div>
             )}
