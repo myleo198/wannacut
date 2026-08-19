@@ -1,8 +1,9 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { X, ExternalLink, BellOff, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-shell';
+import { getVersion } from '@tauri-apps/api/app';
 import { useTranslation } from 'react-i18next';
 
 // Interface para que o App.tsx possa controlar o modal
@@ -17,6 +18,80 @@ interface NotificationsProps {
 
 // ─── SPOTLIGHT: shown once per day for update/urgent notifications ───────────
 const SPOTLIGHT_KEY = 'wannacut_spotlight_date';
+
+// ─── VERSION FILTER: for_version = { min?: "x.x.x", max?: "x.x.x" } ──────────
+// Sem min -> aceita qualquer versão para baixo (até o max).
+// Sem max -> aceita qualquer versão para cima (a partir do min).
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((v) => parseInt(v, 10) || 0);
+  const pb = b.split('.').map((v) => parseInt(v, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+function isVersionCompatible(currentVersion: string, for_version?: { min?: string; max?: string }): boolean {
+  if (!for_version){
+    console.log('there is no version')
+    return true;}
+  const { min, max } = for_version;
+  if(for_version)
+    console.log(for_version)
+  if (max)
+    console.log("comparando", max, compareVersions(currentVersion, max));
+  if (min && compareVersions(currentVersion, min) < 0) return false;
+  if (max && compareVersions(currentVersion, max) > 0) return false;
+  return true;
+}
+
+// ─── PLAN FILTER: for_plan = ["free" | "pro" | "ultimate", ...] ─────────────
+function isPlanCompatible(currentPlan: string, for_plan?: string[]): boolean {
+  if (!for_plan || for_plan.length === 0) return true;
+  return for_plan.includes(currentPlan);
+}
+
+// ─── TRANSLATION: traduz on-the-fly para o idioma salvo em "lang" ───────────
+// As notificações chegam sempre em inglês (source = "en") e são traduzidas
+// no cliente. Resultados ficam em cache em memória para evitar chamadas repetidas.
+const translationCache: Record<string, string> = {};
+
+async function translateText(text: string, targetLang: string): Promise<string> {
+  if (!text) return text;
+  const normalizedLang = targetLang.split('-')[0].toLowerCase();
+  if (!normalizedLang || normalizedLang === 'en') return text;
+
+  const cacheKey = `${normalizedLang}::${text}`;
+  if (translationCache[cacheKey]) return translationCache[cacheKey];
+
+  try {
+    const res = await fetch(
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${normalizedLang}&dt=t&q=${encodeURIComponent(text)}`
+    );
+    const data = await res.json();
+    const translated = (data?.[0] ?? [])
+      .map((chunk: any) => chunk?.[0] ?? '')
+      .join('');
+    if (!translated) return text;
+    translationCache[cacheKey] = translated;
+    return translated;
+  } catch (err) {
+    console.error('WannaCut Translation Error:', err);
+    return text; // fallback: mantém o texto original em caso de falha
+  }
+}
+
+async function translateNotification(n: any, targetLang: string) {
+  const [title, description, link_text] = await Promise.all([
+    translateText(n.title, targetLang),
+    translateText(n.description, targetLang),
+    n.link_text ? translateText(n.link_text, targetLang) : Promise.resolve(n.link_text),
+  ]);
+  return { ...n, title, description, link_text };
+}
 
 const NotificationSpotlight = ({ notifications, onClose }: { notifications: any[]; onClose: () => void }) => {
   const { t } = useTranslation();
@@ -155,6 +230,12 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
   const [spotlightNotifs, setSpotlightNotifs] = useState<any[]>([]);
   const [showSpotlight, setShowSpotlight] = useState(false);
   const [tryNot, setTryNot] = useState(0);
+  const [plan, setPlan] = useState<'free' | 'pro' | 'ultimate'>('free');
+
+  // Refs para acessar o valor mais recente de plano/versão dentro do
+  // useEffect de notificações sem precisar recriar seu timer (dependências).
+  const planRef = useRef<'free' | 'pro' | 'ultimate'>('free');
+  const versionRef = useRef<string>('0.0.0');
 
   // Expõe o método toggle para ser chamado via Ref pelo App.tsx
   useImperativeHandle(ref, () => ({
@@ -162,6 +243,34 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
       setIsOpen(!isOpen);
     }
   }));
+
+  // ─── Carrega versão do app e plano da licença (uma vez, ao montar) ───────
+  useEffect(() => {
+    const settingsFolder = localStorage.getItem("wannacut_settings_folder");
+
+    getVersion()
+      .then((v) => {
+        versionRef.current = v;
+        console.log('bebe version: ',versionRef.current);
+      })
+      .catch((err) => console.error("Failed to get app version:", err));
+
+    const validate_offline = async () => {
+      try {
+        const result: any = await invoke("get_license_state", { settingsFolder });
+        if (result && result.plan) {
+          planRef.current = result.plan;
+          setPlan(result.plan);
+        }
+      } catch (err) {
+        console.error("Erro na validação de licença offline (Usuário Free):", err);
+        planRef.current = 'free';
+        setPlan('free');
+      }
+    };
+
+    validate_offline();
+  }, []);
 
 
 
@@ -174,17 +283,30 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
 
           // Chama o comando Rust enviando o caminho da pasta de settings
           invoke('check_notifications', { settingsPath: settingsFolder })
-            .then((msgs: any) => {
-              setNotifications(msgs);
+            .then(async (msgs: any) => {
+              // --- FILTRO por versão (for_version) e por plano (for_plan) ---
+              const compatible = (msgs as any[]).filter((n) =>
+                isVersionCompatible(versionRef.current, n.for_version) &&
+                isPlanCompatible(planRef.current, n.for_plan)
+              );
+
+              // --- TRADUÇÃO para o idioma salvo em localStorage("lang") ---
+              const lang = localStorage.getItem('lang') || 'en';
+              const translated = await Promise.all(
+                compatible.map((n) => translateNotification(n, lang))
+              );
+
+              setNotifications(translated);
               // Se houver mensagens, avisamos o componente pai para mostrar o alerta (badge)
-              if (msgs.length > 0 && onNewNotifications) {
+              if (translated.length > 0 && onNewNotifications) {
                 onNewNotifications(true);
               }
               // --- SPOTLIGHT: show once per day for update/urgent ---
               const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
               const lastSeen = localStorage.getItem(SPOTLIGHT_KEY);
+              
               if (lastSeen !== today) {
-                const highlighted = msgs.filter((n: any) => n.type_ === 'update' || n.type_ === 'urgent');
+                const highlighted = translated.filter((n: any) => n.type_ === 'update' || n.type_ === 'urgent');
                 if (highlighted.length > 0) {
                   setSpotlightNotifs(highlighted);
                   setShowSpotlight(true);

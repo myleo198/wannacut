@@ -317,31 +317,6 @@ export const reverterSpeed = (realSpeed: number): number => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────
-// GATE DE FEATURES PAGAS (Neon / Glow, e futuras features PRO/Ultimate)
-//
-// IMPORTANTE: o state React `plan` (useState mais abaixo) é só pra EXIBIÇÃO
-// ("💎 Pro" no header, texto do modal, etc). Ele é lido do backend uma
-// única vez no boot e fica boiando em memória — qualquer pessoa com o
-// React DevTools aberto consegue editar esse hook e virar "pro" na hora,
-// sem nenhuma licença real. Então NENHUMA feature paga de verdade pode
-// checar `plan === 'pro'`.
-//
-// Em vez disso, features pagas chamam `hasPlanAccess(folder, 'pro' | 'ultimate')`,
-// que sempre pergunta de novo pro Rust via `get_license_state` (plans.rs).
-// Esse comando reconstrói o LicenseState do zero a partir do arquivo
-// assinado em disco (validate_offline → verifica assinatura Ed25519 +
-// HWID + validade a cada chamada) — é o MESMO comando que já existe pra
-// mostrar o plano no header/modal, só que aqui a gente nunca guarda o
-// resultado em state de longa duração. Não existe "flag" que o JS
-// controle: o único jeito de virar `true` é ter, na máquina atual, um
-// token válido assinado pela chave privada do servidor.
-//
-// O cache aqui é curtíssimo (poucos segundos) e serve só pra não martelar
-// IPC a cada clique/frame — nunca vira um cache "pra sessão inteira" como
-// o `plan` acima, justamente pra pegar downgrade/expiração de licença sem
-// precisar reiniciar o app.
-// ─────────────────────────────────────────────────────────────────────────
 export type PlanTier = 'free' | 'pro' | 'ultimate';
 const PLAN_RANK: Record<PlanTier, number> = { free: 0, pro: 1, ultimate: 2 };
 

@@ -129,7 +129,16 @@ pub struct Clip {
 use tauri::Emitter; // Adicione este import no topo
 
 // 1. Você PRECISA desta struct definida para os erros E0425 sumirem
-#[derive(Serialize, Deserialize, Clone)]
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+struct VersionRange {
+    min: Option<String>,
+    max: Option<String>,
+}
+
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[serde(default)] // evita quebrar se algum JSON antigo não tiver esses campos
 pub struct Notification {
     pub id: String,
     pub title: String,
@@ -138,6 +147,8 @@ pub struct Notification {
     pub image: Option<String>,
     pub link: Option<String>,
     pub link_text: Option<String>,
+    pub for_version: Option<VersionRange>,
+    pub for_plan: Option<Vec<String>>,
     pub repeat: bool,
 }
 
@@ -2934,7 +2945,6 @@ fn main() {
             plans::activate_license,
             plans::get_license_state,
             plans::deactivate_license,
-            plans::has_pro_access,
             vocal_remover::vocal_remover_ready,
             vocal_remover::vocal_remover_download,
             vocal_remover::remove_vocals,
