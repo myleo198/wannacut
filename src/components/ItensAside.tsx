@@ -199,7 +199,9 @@ const VIDEO_EFFECTS = [
   { id: 'vhs_2', label: 'VHS 2' },
   { id: 'vhs_3', label: 'VHS 3' },
   { id: 'vhs_4', label: 'VHS 4' },
-  { id:'vhs_all', label: 'VHS_ALL'}
+  { id:'vhs_all', label: 'VHS_ALL'},
+  { id: 'rain', label: 'Rain' },
+  { id: 'smoke_fog', label: 'Smoke / Fog' },
 
 
 

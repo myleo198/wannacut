@@ -1203,6 +1203,8 @@ const EffectControl = ({ effect, onUpdate }) => {
     case 'vhs_3':
     case 'vhs_4':  
     case 'vhs_all':
+    case 'rain':
+    case 'smoke_fog':
       return renderSlider(t('properties.effects_.intensity'), 'intensity', 0, 100, 1);
     case 'microphone':
     case 'alien':
