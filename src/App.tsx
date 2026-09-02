@@ -2237,7 +2237,7 @@ useEffect(() => {
 
 
 const lastFrameTimeRef = useRef<number>(0);
-const FPS_LIMIT = 1000 / 20; // 30 FPS (aprox 33ms)
+const FPS_LIMIT = 1000 / 24; // 30 FPS (aprox 33ms)
 
 const getOpacityAtTime = (clip: Clip) => {
   if (!clip.keyframes || !clip.keyframes.opacity || clip.keyframes.opacity.length === 0) {

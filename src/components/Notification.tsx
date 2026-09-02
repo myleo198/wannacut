@@ -236,6 +236,13 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
   // useEffect de notificações sem precisar recriar seu timer (dependências).
   const planRef = useRef<'free' | 'pro' | 'ultimate'>('free');
   const versionRef = useRef<string>('0.0.0');
+  // Ref para a prop onNewNotifications: evita que o efeito de notificações
+  // (abaixo) reexecute sempre que o pai renderizar com uma nova referência
+  // de função inline.
+  const onNewNotificationsRef = useRef(onNewNotifications);
+  useEffect(() => {
+    onNewNotificationsRef.current = onNewNotifications;
+  }, [onNewNotifications]);
 
   // Expõe o método toggle para ser chamado via Ref pelo App.tsx
   useImperativeHandle(ref, () => ({
@@ -276,10 +283,11 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
 
   useEffect(() => {
     const settingsFolder = localStorage.getItem("wannacut_settings_folder");
-    
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     if (settingsFolder && tryNot < 5) {
         // Aguarda 60 segundos (60000ms) antes de iniciar a execução
-        setTimeout(() => {
+        timer = setTimeout(() => {
 
           // Chama o comando Rust enviando o caminho da pasta de settings
           invoke('check_notifications', { settingsPath: settingsFolder })
@@ -298,19 +306,22 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
 
               setNotifications(translated);
               // Se houver mensagens, avisamos o componente pai para mostrar o alerta (badge)
-              if (translated.length > 0 && onNewNotifications) {
-                onNewNotifications(true);
+              if (translated.length > 0 && onNewNotificationsRef.current) {
+                onNewNotificationsRef.current(true);
               }
               // --- SPOTLIGHT: show once per day for update/urgent ---
               const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
               const lastSeen = localStorage.getItem(SPOTLIGHT_KEY);
-              
+
               if (lastSeen !== today) {
+                // Marca o dia como "visto" ANTES do trabalho assíncrono/estado,
+                // travando a corrida: mesmo que outra execução concorrente
+                // chegue aqui, ela vai achar lastSeen === today e não duplicar.
+                localStorage.setItem(SPOTLIGHT_KEY, today);
                 const highlighted = translated.filter((n: any) => n.type_ === 'update' || n.type_ === 'urgent');
                 if (highlighted.length > 0) {
                   setSpotlightNotifs(highlighted);
                   setShowSpotlight(true);
-                  localStorage.setItem(SPOTLIGHT_KEY, today);
                 }
               }
             })
@@ -326,8 +337,12 @@ const Notifications = forwardRef<NotificationsRef, NotificationsProps>(({ onNewN
         setTryNot(prev => prev +1)
       }
 
-
-  }, [onNewNotifications]);
+    // Cleanup: cancela o timeout pendente se o efeito for desmontado/reexecutado,
+    // evitando timers acumulados de execuções anteriores.
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   return (
     <>
